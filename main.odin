@@ -3,7 +3,7 @@ import "core:fmt"
 
 main :: proc() {
 
-	t := init_tokenizer("./tokenizer.odin")
+	t := init_tokenizer("./test.freyja")
 	line_no := 1
 	for {
 		token := scan(&t)
@@ -12,7 +12,7 @@ main :: proc() {
 			fmt.printf("\n")
 			line_no = token.pos.line
 		}
-		fmt.printf("%v ", token.text)
+		fmt.printf("%v ", token.kind)
 
 	}
 }

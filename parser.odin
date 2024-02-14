@@ -73,3 +73,78 @@ parse_fail :: proc(p: ^Parser) -> ! {
 	}
 	panic("Fatal Parse Error")
 }
+
+////////////////////////////////////////////////////////\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+// Statement =
+// 	Declaration | LabeledStmt | SimpleStmt |
+// 	GoStmt | ReturnStmt | BreakStmt | ContinueStmt | GotoStmt |
+// 	FallthroughStmt | Block | IfStmt | SwitchStmt | SelectStmt | ForStmt |
+// 	DeferStmt .
+
+// SimpleStmt = EmptyStmt | ExpressionStmt | SendStmt | IncDecStmt | Assignment | ShortVarDecl .
+
+statement :: proc(p: ^Parser) {}
+// statements:
+decl_stmt :: proc(p: ^Parser) {}
+labeled_stmt :: proc(p: ^Parser) {}
+return_stmt :: proc(p: ^Parser) {}
+break_stmt :: proc(p: ^Parser) {}
+continue_stmt :: proc(p: ^Parser) {}
+fallthrough_stmt :: proc(p: ^Parser) {}
+block_stmt :: proc(p: ^Parser) {}
+if_stmt :: proc(p: ^Parser) {}
+switch_stmt :: proc(p: ^Parser) {}
+loop_stmt :: proc(p: ^Parser) {}
+defer_stmt :: proc(p: ^Parser) {}
+simple_stmt :: proc(p: ^Parser) {}
+// Simple-Statements:
+empty_stmt :: proc(p: ^Parser) {}
+expr_stmt :: proc(p: ^Parser) {}
+assign_stmt :: proc(p: ^Parser) {}
+inc_dec_stmt :: proc(p: ^Parser) {}
+
+// Declaration   = ConstDecl | TypeDecl | VarDecl | ImportDecl
+// Decls:
+type_decl :: proc(p: ^Parser) {} 	// expand to struct,union,enum,distinct
+variable_decl :: proc(p: ^Parser) {}
+proc_decl :: proc(p: ^Parser) {}
+method_decl :: proc(p: ^Parser) {} 	// add target of method?
+import_decl :: proc(p: ^Parser) {}
+
+// Expression = UnaryExpr | Expression binary_op Expression .
+// UnaryExpr  = PrimaryExpr | unary_op UnaryExpr .
+// binary_op  = "||" | "&&" | rel_op | add_op | mul_op .
+// rel_op     = "==" | "!=" | "<" | "<=" | ">" | ">=" .
+// add_op     = "+" | "-" | "|" | "^" .
+// mul_op     = "*" | "/" | "%" | "<<" | ">>" | "&" | "&^" .
+// unary_op   = "+" | "-" | "!" | "^" | "*" | "&" | "<-" .
+
+// PrimaryExpr =
+// 	Operand |
+// 	Conversion |
+// 	MethodExpr |
+// 	PrimaryExpr Selector |
+// 	PrimaryExpr Index |
+// 	PrimaryExpr Slice |
+// 	PrimaryExpr TypeAssertion |
+// 	PrimaryExpr Arguments .
+
+// Selector       = "." identifier .
+// Index          = "[" Expression [ "," ] "]" .
+// Slice          = "[" [ Expression ] ":" [ Expression ] "]" |
+//                  "[" [ Expression ] ":" Expression ":" Expression "]" .
+// TypeAssertion  = "." "(" Type ")" .
+// Arguments      = "(" [ ( ExpressionList | Type [ "," ExpressionList ] ) [ "..." ] [ "," ] ] ")" .
+
+// Exprs:
+expression :: proc(p: ^Parser) {}
+//
+unary_expr :: proc(p: ^Parser) {}
+binary_expr :: proc(p: ^Parser) {}
+paren_expr :: proc(p: ^Parser) {}
+
+
+// literals:
+// Literal     = BasicLit | CompositeLit | FunctionLit .
+// BasicLit    = int_lit | float_lit | imaginary_lit | rune_lit | string_lit .
+literal :: proc(p: ^Parser) {}

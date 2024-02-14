@@ -110,9 +110,10 @@ Token_Kind :: enum {
 	Union, // union
 	Enum, // enum
 	Bit_Set, // bit_set
+	Bit_Field, // bit_field
 	Map, // map
 	Dynamic, // dynamic
-	Auto_Cast, // auto_cast
+	Auto, // auto_cast
 	Cast, // cast
 	Transmute, // transmute
 	Distinct, // distinct
@@ -142,7 +143,7 @@ KEYWORDS := map[string]Token_Kind {
 	"switch"      = .Switch,
 	"in"          = .In,
 	"not_in"      = .Not_In,
-	"do"          = .Do,
+	"do"          = .Do, // then?
 	"case"        = .Case,
 	"break"       = .Break,
 	"continue"    = .Continue,
@@ -154,14 +155,14 @@ KEYWORDS := map[string]Token_Kind {
 	"union"       = .Union,
 	"enum"        = .Enum,
 	"bit_set"     = .Bit_Set,
+	"bit_field"   = .Bit_Field,
 	"map"         = .Map,
 	"dynamic"     = .Dynamic,
-	"auto_cast"   = .Auto_Cast,
+	"auto"        = .Auto,
 	"cast"        = .Cast,
 	"transmute"   = .Transmute,
 	"distinct"    = .Distinct,
 	"using"       = .Using,
-	"context"     = .Context,
 	"or_else"     = .Or_Else,
 	"or_return"   = .Or_Return,
 	"or_break"    = .Or_Break,

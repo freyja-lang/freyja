@@ -1,0 +1,94 @@
+Production = Statement*
+
+Statement = Declaration 
+           | Labeled_Stmt 
+           | Simple_Stmt 
+           | Return_Stmt 
+           | Break_Stmt 
+           | Continue_Stmt 
+           | Fallthrough_Stmt 
+           | Block 
+           | If_Stmt 
+           | Switch_Stmt 
+           | Select_Stmt 
+           | Loop_Stmt 
+           | Defer_Stmt 
+
+Declaration = Const_Decl 
+            | Type_Decl 
+            | Var_Decl 
+
+Labeled_Stmt = Label ":" Statement 
+
+Simple_Stmt = Empty_Stmt 
+            | Expression_Stmt 
+            | Inc_Dec_Stmt 
+            | Assignment 
+
+Return_Stmt = "return" Expression_List?
+
+Break_Stmt = "break" Label?
+
+Continue_Stmt = "continue" Label?
+
+Fallthrough_Stmt = "fallthrough"
+
+Block = "{" Statement* "}"
+
+If_Stmt = "if" (Simple_Stmt ";")? 
+          Expression 
+          Block 
+          ("else" ( If_Stmt | Block ))?
+
+Switch_Stmt = "switch" 
+              (Simple_Stmt ";")?
+              Expression
+              "{" Switch_Case* "}" .
+
+Switch_Case = 
+              "case" Expression_List? ":" Statement+
+
+Expression_List = 
+                  Expression ("," Expression)*
+
+Loop_Stmt = "loop" 
+            (Loop_Clause | Condition | Loop_Iter)?
+            Block
+Loop_Clause = 
+            (Simple_Stmt ";")?      // Init-Stmt
+            (Expression ";")?       // Condition
+            (Simple_Stmt)?          // Post-Stmt
+Loop_Iter = 
+            ("&")? Identifier ("," Identifier)? "in" Identifier
+
+Defer_Stmt = "defer" Expression 
+
+Const_Decl = Identifier ":" Type? ":" Expression
+
+Var_Decl = Identifier ":" Type
+
+Type_Decl = Identifier "::" 
+    (Struct_Decl | Union_Decl | Enum_Decl | Proc_Decl | Alias_Decl)
+
+Alias_Decl = "distinct"? Type
+
+Struct_Decl = "struct" "{" (Field_Decl ",")* "}"
+Field_Decl = Identifier_List ":" Type
+
+Enum_Decl = "enum" Type? "{" (Enum_Field ",")* "}"
+Enum_Field = Identifier ("=" Expression)?
+
+Union_Decl = "union" "{" (Type ",")* "}"
+
+Proc_Decl = "proc" "(" Parameter_List? ")" ("->" Type_List | Parameter_List)? Block?
+
+Parameters = "(" Parameter_List? ")"
+Parameter_List = Parameter_Decl ("," Parameter_Decl)*
+Parameter_Decl = Identifier_List ":" ("..")? Type
+
+Identifier_List = Identifier ("," Identifier)*
+Type_List = Type ("," Type)*
+
+Type = Identifier | Qualified_Ident
+Qualified_Ident = Package_Name "." Identifier
+Package_Name = Identifier
