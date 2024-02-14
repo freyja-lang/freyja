@@ -1,7 +1,6 @@
 Production = Statement*
 
 Statement = Declaration 
-           | Labeled_Stmt 
            | Simple_Stmt 
            | Return_Stmt 
            | Break_Stmt 

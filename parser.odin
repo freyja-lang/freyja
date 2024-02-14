@@ -140,6 +140,13 @@ statement :: proc(p: ^Parser) -> Stmt {
 	// 	append(&prefix_directives, expect_token(p, .String).text)
 	// }
 	tok := current_token(p)
+	// label: ^Token
+	// if tok.kind == .Ident && peek_token(p).kind == .Colon {
+	// 	label = &p.tokens[p.current_i]
+	// 	advance_token(p)
+	// 	advance_token(p)
+	// }
+
 	#partial switch tok.kind {
 	case .Proc, .Ident, .Integer, .Float, .Imaginary, .Rune, .String, .Open_Paren, .Pointer, .Add, .Sub, .Xor, .Not, .And:
 		return simple_stmt(p)
@@ -160,7 +167,7 @@ statement :: proc(p: ^Parser) -> Stmt {
 }
 // statements:
 decl_stmt :: proc(p: ^Parser) {}
-labeled_stmt :: proc(p: ^Parser) {}
+// labeled_stmt :: proc(p: ^Parser) {}
 return_stmt :: proc(p: ^Parser) {}
 break_stmt :: proc(p: ^Parser) {}
 continue_stmt :: proc(p: ^Parser) {}
@@ -178,53 +185,31 @@ loop_stmt :: proc(p: ^Parser) -> Stmt {
 defer_stmt :: proc(p: ^Parser) {}
 simple_stmt :: proc(p: ^Parser) -> Stmt {
 	start := current_token(p)
-	// dont think this will work...
-	#partial switch start.kind {
-	case .Ident:
-		ident := advance_token(p)
-		if peek_token(p).kind == .Colon {
-			advance_token(p)
-			// implicit type, constant:
-			if peek_token(p, 1).kind == .Colon {
-				advance_token(p)
-				#partial switch current_token(p).kind {
-				case .Struct:
-				case .Union:
-				case .Enum:
-				case:
-				//lit
-				}
-			}
+	lhs := expression_list(p)
+	if len(lhs) == 0 {error(p, start.pos, "no lhs in simple-stmt")}
+	op := current_token(p)
 
-
+	switch {
+	//  decls:
+	case op.kind == .Colon:
+		value_decl(p, lhs)
+	// assignments of existing:
+	case is_assignment_operator(op.kind):
+		advance_token(p)
+		rhs := expression_list(p, true)
+		if len(rhs) == 0 {
+			error(p, op.pos, "no rhs in assignment")
 		}
-		if match_token(p, .Colon) {
-			if peek_token(p).kind == .Ident && peek_token(p, 2).kind == .Colon {
+		stmt := new(Assign_Stmt)
+		stmt.op = op
+		stmt.lhs = lhs
+		stmt.rhs = rhs
+		return into_stmt(p, start, prev_token(p), stmt)
+	case op.kind == .In:
+		unimplemented()
 
-			}
-		}
-		next := current_token(p)
 
 	}
-	// lhs := expression_list(p)
-	// if len(lhs) == 0 {error(p, start.pos, "no lhs in simple-stmt")}
-	// op := current_token(p)
-	// switch {
-	// case is_assignment_operator(op.kind):
-	// 	advance_token(p)
-	// 	rhs := expression_list(p)
-	// 	if len(rhs) == 0 {
-	// 		error(p, op.pos, "no rhs in assignment")
-	// 	}
-	// 	stmt := new(Assign_Stmt)
-	// 	stmt.op = op
-	// 	stmt.lhs = lhs
-	// 	stmt.rhs = rhs
-	// 	return into_stmt(p, start, prev_token(p), stmt)
-	// case op.kind == .Colon:
-	// // if label..
-
-	// }
 	unimplemented()
 }
 // Simple-Statements:
@@ -240,7 +225,7 @@ inc_dec_stmt :: proc(p: ^Parser) {}
 // Declaration   = ConstDecl | TypeDecl | VarDecl | ImportDecl
 // Decls:
 type_decl :: proc(p: ^Parser) {} 	// expand to struct,union,enum,distinct
-value_decl :: proc(p: ^Parser) -> Stmt {
+value_decl :: proc(p: ^Parser, lhs: []^Expr) -> Stmt {
 	unimplemented()
 }
 proc_decl :: proc(p: ^Parser) {}
@@ -291,7 +276,7 @@ into_stmt :: proc(p: ^Parser, start_token: Token, end_token: Token, val: Any_Stm
 // Arguments      = "(" [ ( ExpressionList | Type [ "," ExpressionList ] ) [ "..." ] [ "," ] ] ")" .
 
 // Exprs:
-expression_list :: proc(p: ^Parser) -> []^Expr {
+expression_list :: proc(p: ^Parser, rhs := false) -> []^Expr {
 	exprs: [dynamic]^Expr
 	for !at_eof(p) {
 		expr := expression(p)
@@ -301,11 +286,11 @@ expression_list :: proc(p: ^Parser) -> []^Expr {
 	}
 	return exprs[:]
 }
-expression :: proc(p: ^Parser) -> ^Expr {
-	return binary_expr(p, 1)
+expression :: proc(p: ^Parser, rhs := false) -> ^Expr {
+	return binary_expr(p, 1, rhs)
 }
 //
-binary_expr :: proc(p: ^Parser, prec_in: int) -> ^Expr {
+binary_expr :: proc(p: ^Parser, prec_in: int, rhs := false) -> ^Expr {
 	start := current_token(p)
 	expr := unary_expr(p)
 	if expr == nil {
@@ -331,7 +316,7 @@ binary_expr :: proc(p: ^Parser, prec_in: int) -> ^Expr {
 	return expr
 }
 
-unary_expr :: proc(p: ^Parser) -> ^Expr {
+unary_expr :: proc(p: ^Parser, rhs := false) -> ^Expr {
 	tok := current_token(p)
 	#partial switch tok.kind {
 	case .Transmute, .Cast:
@@ -358,18 +343,41 @@ unary_expr :: proc(p: ^Parser) -> ^Expr {
 
 }
 
-operand_expr :: proc(p: ^Parser) -> ^Expr {
+atom_expr :: proc(p: ^Parser, rhs := false) -> ^Expr {
+	expr: ^Expr
 	tok := current_token(p)
 	#partial switch tok.kind {
 	case .Ident:
 		id_tok := expect_token(p, .Ident)
 		id := new(Ident_Expr)
 		id.name = id_tok.text
-		return into_expr(p, tok, prev_token(p), id)
+		expr = into_expr(p, tok, prev_token(p), id)
 	case .Integer, .Float, .Imaginary, .Rune, .String:
 		bl := new(Basic_Lit_Expr)
 		bl.tok = advance_token(p)
-		return into_expr(p, tok, prev_token(p), bl)
+		expr = into_expr(p, tok, prev_token(p), bl)
+	case .Open_Brace:
+		if rhs {
+			expr = compound_lit_expr(p, nil)
+		}
+	case .Open_Paren:
+		pe := new(Paren_Expr)
+		start := expect_token(p, .Open_Paren)
+		p.expr_level += 1
+		pe.expr = expression(p, true)
+		p.expr_level -= 1
+		end := expect_token(p, .Close_Paren)
+		expr = into_expr(p, start, end, pe)
+	case .Hash:
+		unimplemented("directives")
+	case .Proc:
+		unimplemented("proc?")
+	case .Pointer:
+		ptr := expect_token(p, .Pointer)
+		pt := new(Pointer_Type)
+		pt.expr = type_expr(p)
+		at: Any_Type = pt
+		expr = into_expr(p, tok, ptr, at)
 	}
 	unimplemented()
 }
@@ -385,7 +393,9 @@ paren_expr :: proc(p: ^Parser) -> ^Expr {
 	return into_expr(p, open, close, pe)
 }
 
-
+compound_lit_expr :: proc(p: ^Parser, type: ^Expr) -> ^Expr {
+	unimplemented()
+}
 // literals:
 // Literal     = BasicLit | CompositeLit | FunctionLit .
 // BasicLit    = int_lit | float_lit | imaginary_lit | rune_lit | string_lit .

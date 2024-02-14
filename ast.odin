@@ -152,7 +152,10 @@ Any_Expr :: union {
 	^Deref_Expr,
 	^Call_Expr,
 	^Type_Cast_Expr,
+	//
+	Any_Type,
 }
+
 Bad_Expr :: struct {}
 Ident_Expr :: struct {
 	name: string,
