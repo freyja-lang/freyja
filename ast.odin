@@ -41,6 +41,7 @@ Any_Stmt :: union {
 	^Loop_Stmt,
 	^Case_Clause_Stmt,
 	^Switch_Stmt,
+	//
 	^Bad_Decl,
 	^Value_Decl,
 	^Import_Decl,
@@ -121,8 +122,8 @@ Value_Decl :: struct {
 }
 //package
 Import_Decl :: struct {
-	base_import: Token, // "core:fmt"
-	full_path:   string, // c:/xyz/odin/core/fmt
+	path:      string, // "core:fmt"
+	full_path: string, // c:/xyz/odin/core/fmt
 }
 Foriegn_Import_Decl :: struct {
 	name:  ^Ident_Expr,
@@ -138,19 +139,19 @@ Expr :: struct {
 	value: Any_Expr,
 }
 Any_Expr :: union {
-	Bad_Expr,
-	Ident_Expr,
-	Basic_Lit_Expr,
-	Proc_Lit_Expr,
-	Comp_Lit_Expr,
-	Ellipsis_Expr,
-	Unary_Expr,
-	Binary_Expr,
-	Paren_Expr,
-	Index_Expr,
-	Deref_Expr,
-	Call_Expr,
-	Type_Cast_Expr,
+	^Bad_Expr,
+	^Ident_Expr,
+	^Basic_Lit_Expr,
+	^Proc_Lit_Expr,
+	^Comp_Lit_Expr,
+	^Ellipsis_Expr,
+	^Unary_Expr,
+	^Binary_Expr,
+	^Paren_Expr,
+	^Index_Expr,
+	^Deref_Expr,
+	^Call_Expr,
+	^Type_Cast_Expr,
 }
 Bad_Expr :: struct {}
 Ident_Expr :: struct {

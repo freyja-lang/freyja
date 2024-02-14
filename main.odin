@@ -12,7 +12,7 @@ main :: proc() {
 			fmt.printf("\n")
 			line_no = token.pos.line
 		}
-		fmt.printf("%v ", token.kind)
+		fmt.printf("%v (%v) ", token.kind, token.text)
 
 	}
 }

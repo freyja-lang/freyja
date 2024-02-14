@@ -47,6 +47,7 @@ Token_Kind :: enum {
 	Cmp_And, // &&
 	Cmp_Or, // ||
 	//
+	B_Assign_Op_Begin,
 	Add_Eq, // +=
 	Sub_Eq, // -=
 	Mul_Eq, // *=
@@ -61,6 +62,7 @@ Token_Kind :: enum {
 	Shr_Eq, // >>=
 	Cmp_And_Eq, // &&=
 	Cmp_Or_Eq, // ||=
+	B_Assign_Op_End,
 	//
 	Arrow_Right, // ->
 	Undef, // ---
@@ -94,7 +96,7 @@ Token_Kind :: enum {
 	Where, // where
 	If, // if
 	Else, // else
-	For, // for
+	Loop, // for
 	Switch, // switch
 	In, // in
 	Not_In, // not_in
@@ -139,7 +141,7 @@ KEYWORDS := map[string]Token_Kind {
 	"where"       = .Where,
 	"if"          = .If,
 	"else"        = .Else,
-	"for"         = .For,
+	"loop"        = .Loop,
 	"switch"      = .Switch,
 	"in"          = .In,
 	"not_in"      = .Not_In,
