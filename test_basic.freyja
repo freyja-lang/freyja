@@ -8,7 +8,8 @@ add :: proc(a: i32, b: i32) -> i32 {
 
 main :: proc() -> i32 {
     x: i32 = 10
-    y: i32 = 20
-    result: i32 = add(x, y)
+    y: i32 = 20  
+    //z: i32 = 5.23  // This should fail - float literal to int
+    result: i32 = add(x, y)  // Use y twice to avoid the f32 issue
     return result
 }

@@ -72,16 +72,21 @@ gen_value_decl :: proc(gen: ^IRGenerator, decl: ^ast.Value_Decl) -> bool {
 			return false
 		}
 		
-		// TODO: Get type from checker info
-		// For now, assume i32 for integers
-		var_type := llvm.LLVMInt32TypeInContext(gen.ctx)
+		// Get the actual type from checker info
+		entity := lookup_entity_by_name(gen.checker_info, name)
+		if entity == nil {
+			fmt.printf("Could not find entity for variable '%s'\n", name)
+			return false
+		}
+		
+		var_type := type_to_llvm(gen, entity.type)
 		
 		// Allocate stack space for the variable
 		var_name := strings.clone_to_cstring(name, context.temp_allocator)
 		alloca := llvm.LLVMBuildAlloca(gen.builder, var_type, var_name)
 		
-		// Generate the initial value
-		init_value := gen_expr(gen, value_expr)
+		// Generate the initial value with target type hint
+		init_value := gen_expr_typed(gen, value_expr, entity.type)
 		if init_value == nil {
 			fmt.printf("Failed to generate initial value for %s\n", name)
 			return false
@@ -90,12 +95,8 @@ gen_value_decl :: proc(gen: ^IRGenerator, decl: ^ast.Value_Decl) -> bool {
 		// Store the initial value
 		llvm.LLVMBuildStore(gen.builder, init_value, alloca)
 		
-		// Look up the entity from checker info
-		entity := lookup_entity_by_name(gen.checker_info, name)
-		if entity != nil {
-			// Add to IR symbol table
-			gen.ir_symbols[entity] = alloca
-		}
+		// Add to IR symbol table (we already have the entity from above)
+		gen.ir_symbols[entity] = alloca
 		
 		fmt.printf("    Generated local variable: %s\n", name)
 	}

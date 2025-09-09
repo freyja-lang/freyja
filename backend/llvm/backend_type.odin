@@ -28,6 +28,13 @@ type_to_llvm :: proc(gen: ^IRGenerator, type: ^checker.Type) -> llvm.LLVMTypeRef
 				return llvm.LLVMInt32TypeInContext(gen.ctx)
 			case .i64, .u64:
 				return llvm.LLVMInt64TypeInContext(gen.ctx)
+			case .int, .uint:
+				// Platform-specific: use pointer-sized integer
+				if basic.size == 8 {
+					return llvm.LLVMInt64TypeInContext(gen.ctx)
+				} else {
+					return llvm.LLVMInt32TypeInContext(gen.ctx)
+				}
 			case .f32:
 				return llvm.LLVMFloatTypeInContext(gen.ctx)
 			case .f64:

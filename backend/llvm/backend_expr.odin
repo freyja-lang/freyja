@@ -4,23 +4,68 @@ import llvm "../../llvm"
 import "../../checker"
 import "core:fmt"
 import "core:strings"
+import "core:strconv"
 import "core:odin/ast"
 
 // Expression generation (like Odin's llvm_backend_expr.cpp)
 
-// Generate LLVM IR for an expression
+// Generate LLVM IR for an expression (without type hint)
 gen_expr :: proc(gen: ^IRGenerator, expr: ^ast.Expr) -> llvm.LLVMValueRef {
+	return gen_expr_typed(gen, expr, nil)
+}
+
+// Generate LLVM IR for an expression with a target type hint
+gen_expr_typed :: proc(gen: ^IRGenerator, expr: ^ast.Expr, target_type: ^checker.Type) -> llvm.LLVMValueRef {
 	#partial switch e in expr.derived_expr {
 	case ^ast.Basic_Lit:
 		// Generate literal values
 		#partial switch e.tok.kind {
 		case .Integer:
-			// For now, assume i32
-			value := 0 // TODO: Parse actual value from token
-			return llvm.LLVMConstInt(llvm.LLVMInt32TypeInContext(gen.ctx), cast(u64)value, 0)
+			// Parse the actual integer value
+			value, ok := strconv.parse_i64(e.tok.text)
+			if !ok {
+				fmt.printf("Failed to parse integer literal: %s\n", e.tok.text)
+				value = 0
+			}
+			
+			// Use target type if provided, otherwise default to i32
+			if target_type != nil && target_type.kind == .Basic {
+				if basic, ok := target_type.variant.(checker.TypeBasic); ok {
+					if .Float in basic.flags {
+						// Convert integer literal to float
+						float_value := cast(f64)value
+						if basic.kind == .f32 {
+							return llvm.LLVMConstReal(llvm.LLVMFloatTypeInContext(gen.ctx), float_value)
+						} else {
+							return llvm.LLVMConstReal(llvm.LLVMDoubleTypeInContext(gen.ctx), float_value)
+						}
+					} else if .Integer in basic.flags {
+						// Generate integer of the appropriate size
+						llvm_type := type_to_llvm(gen, target_type)
+						return llvm.LLVMConstInt(llvm_type, cast(u64)value, 0)
+					}
+				}
+			}
+			// Default to platform int
+			default_int_type := type_to_llvm(gen, checker.t_int)
+			return llvm.LLVMConstInt(default_int_type, cast(u64)value, 0)
 		case .Float:
-			// For now, assume f64
-			value := 0.0 // TODO: Parse actual value from token
+			// Parse the actual float value
+			value, ok := strconv.parse_f64(e.tok.text)
+			if !ok {
+				fmt.printf("Failed to parse float literal: %s\n", e.tok.text)
+				value = 0.0
+			}
+			
+			// Use target type if provided
+			if target_type != nil && target_type.kind == .Basic {
+				if basic, ok := target_type.variant.(checker.TypeBasic); ok {
+					if basic.kind == .f32 {
+						return llvm.LLVMConstReal(llvm.LLVMFloatTypeInContext(gen.ctx), value)
+					}
+				}
+			}
+			// Default to f64
 			return llvm.LLVMConstReal(llvm.LLVMDoubleTypeInContext(gen.ctx), value)
 		case:
 			fmt.printf("Unhandled literal type: %v\n", e.tok.kind)

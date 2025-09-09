@@ -1,0 +1,18 @@
+package main
+
+// Test platform-specific int types
+
+main :: proc() -> int {
+    // These should use platform-specific int (64-bit on x64)
+    a := 42           // untyped int -> int (platform-specific)
+    b: int = 100      // explicit int type
+    c: uint = 200     // explicit uint type
+    
+    // These should use fixed-size types
+    d: i32 = 300      // explicit 32-bit int
+    e: i64 = 400      // explicit 64-bit int
+    f: u32 = 500      // explicit 32-bit uint
+    g: u64 = 600      // explicit 64-bit uint
+    
+    return b
+}

@@ -2,6 +2,7 @@ package checker
 
 import "core:odin/ast"
 import "../llvm"
+import "core:fmt"
 
 // Type kinds - following Odin's design
 TypeKind :: enum {
@@ -40,6 +41,7 @@ BasicKind :: enum {
 	// Integers  
 	i8, i16, i32, i64, i128,
 	u8, u16, u32, u64, u128,
+	int, uint,  // Platform-specific integers
 	
 	// Floats
 	f16, f32, f64,
@@ -354,4 +356,103 @@ type_align_of :: proc(t: ^Type) -> i64 {
 	}
 	
 	return 1
+}
+
+// Check if two types match
+types_match :: proc(a, b: ^Type) -> bool {
+	if a == b do return true
+	if a == nil || b == nil do return false
+	
+	// For now, just check if kinds match and for basic types, check the specific type
+	if a.kind != b.kind do return false
+	
+	if a.kind == .Basic {
+		a_basic, a_ok := a.variant.(TypeBasic)
+		b_basic, b_ok := b.variant.(TypeBasic)
+		if a_ok && b_ok {
+			return a_basic.kind == b_basic.kind
+		}
+	}
+	
+	// TODO: Add more sophisticated type matching
+	return true
+}
+
+// Check if type 'from' can be implicitly converted to type 'to'
+is_type_convertible :: proc(from, to: ^Type) -> bool {
+	if from == to do return true
+	if from == nil || to == nil do return false
+	
+	// Same types always match
+	if types_match(from, to) do return true
+	
+	// Check implicit conversions
+	if from.kind == .Basic && to.kind == .Basic {
+		from_basic, from_ok := from.variant.(TypeBasic)
+		to_basic, to_ok := to.variant.(TypeBasic)
+		if from_ok && to_ok {
+			// Integer to float conversions are allowed
+			if .Integer in from_basic.flags && .Float in to_basic.flags {
+				return true
+			}
+			
+			// Integer to integer conversions (widening only)
+			if .Integer in from_basic.flags && .Integer in to_basic.flags {
+				// Allow if target type is larger
+				return to_basic.size >= from_basic.size
+			}
+			
+			// Untyped literals can convert to their typed equivalents
+			if .Untyped in from_basic.flags {
+				// Untyped int can become any integer or float
+				if from_basic.kind == .UntypedInteger {
+					return .Integer in to_basic.flags || .Float in to_basic.flags
+				}
+				// Untyped float can become any float
+				if from_basic.kind == .UntypedFloat {
+					return .Float in to_basic.flags
+				}
+				// Untyped bool can become any bool
+				if from_basic.kind == .UntypedBool {
+					return .Boolean in to_basic.flags
+				}
+				// Untyped string can become string
+				if from_basic.kind == .UntypedString {
+					return .String in to_basic.flags
+				}
+				// Untyped rune can become rune
+				if from_basic.kind == .UntypedRune {
+					return .Rune in to_basic.flags
+				}
+			}
+		}
+	}
+	
+	return false
+}
+
+// Convert type to string for error messages
+type_to_string :: proc(t: ^Type) -> string {
+	if t == nil do return "unknown"
+	
+	#partial switch t.kind {
+	case .Basic:
+		if basic, ok := t.variant.(TypeBasic); ok {
+			return basic.name
+		}
+	case .Pointer:
+		if ptr, ok := t.variant.(TypePointer); ok {
+			elem_str := type_to_string(ptr.elem)
+			return fmt.tprintf("^%s", elem_str)
+		}
+	case .Array:
+		if array, ok := t.variant.(TypeArray); ok {
+			elem_str := type_to_string(array.elem)
+			return fmt.tprintf("[%d]%s", array.count, elem_str)
+		}
+	case .Proc:
+		return "proc"
+	}
+	
+	return fmt.tprintf("%v", t.kind)
 }

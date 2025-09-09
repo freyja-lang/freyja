@@ -70,6 +70,9 @@ CheckerInfo :: struct {
 
 	// Deferred procedure checking (Phase 2 - following Odin's pattern)
 	procedure_queue: [dynamic]^Entity, // Procedures to check bodies later
+	
+	// Current file being checked (for error reporting)
+	current_file:    string,
 }
 
 // ExprInfo - information about an expression after type checking
@@ -106,16 +109,18 @@ CheckResult :: struct {
 checker_info_init :: proc() -> ^CheckerInfo {
 	info := new(CheckerInfo)
 
+	// Initialize all builtin types
+	init_builtin_types()
+
 	// Create universe scope with built-in types
 	info.universe_scope = new(Scope)
 	info.universe_scope.kind = .UNIVERSE
 	info.universe_scope.entities = make(map[string]^Entity)
 
-	// Create built-in types
-	// Create built-in types using the new type system
-	info.builtin_int = make_type_basic(.i32, 4, "i32", {.Integer})
-	info.builtin_float = make_type_basic(.f32, 4, "f32", {.Float})
-	info.builtin_bool = make_type_basic(.bool, 1, "bool", {.Boolean})
+	// Set commonly used types
+	info.builtin_int = t_int  // Platform-specific int
+	info.builtin_float = t_f32
+	info.builtin_bool = t_bool
 	
 	// Create a void type (size 0)
 	info.builtin_void = make_type(.Basic)
@@ -363,6 +368,9 @@ check :: proc(parse_result: parser.ParseResult) -> CheckResult {
 // Check a file (find and process all declarations)
 check_file :: proc(info: ^CheckerInfo, file: ^ast.File) -> bool {
 	fmt.printf("Checking file: %s\n", file.fullpath)
+	
+	// Set current file for error reporting
+	info.current_file = file.fullpath
 
 	// Process all top-level declarations
 	for decl_stmt in file.decls {
@@ -576,8 +584,31 @@ check_local_declaration :: proc(info: ^CheckerInfo, decl: ^ast.Value_Decl) -> bo
 		entity.decl = cast(^ast.Stmt)decl
 		entity.state = .IN_PROGRESS
 
-		// Type inference from RHS expression
-		entity.type = check_expression(info, value_expr)
+		// Determine type - use explicit type if provided, otherwise infer from RHS
+		if decl.type != nil {
+			// Explicit type specification (e.g., x: f32 = 10)
+			entity.type = resolve_type_spec(info, decl.type)
+			// Still check the expression for type compatibility
+			expr_type := check_expression(info, value_expr)
+			if expr_type != nil && entity.type != nil {
+				if !is_type_convertible(expr_type, entity.type) {
+					expr_name := type_to_string(expr_type)
+					var_type_name := type_to_string(entity.type)
+					error(value_expr.pos, "Cannot convert %s to %s in initialization of '%s'",
+						expr_name, var_type_name, name)
+				}
+			}
+		} else {
+			// Type inference from RHS expression (e.g., x := 10)
+			expr_type := check_expression(info, value_expr)
+			// If the expression type is untyped, resolve to default type
+			if is_type_untyped(expr_type) {
+				entity.type = default_type(expr_type)
+			} else {
+				entity.type = expr_type
+			}
+		}
+		
 		if entity.type == nil {
 			fmt.eprintf("ERROR: Could not determine type for local variable '%s'\n", name)
 			return false
@@ -585,7 +616,16 @@ check_local_declaration :: proc(info: ^CheckerInfo, decl: ^ast.Value_Decl) -> bo
 
 		entity.state = .RESOLVED
 
-		fmt.printf("      Local variable: %s : %v\n", name, entity.type.kind)
+		// Print more type details
+		type_name := "unknown"
+		if entity.type.kind == .Basic {
+			if basic, ok := entity.type.variant.(TypeBasic); ok {
+				type_name = basic.name
+			}
+		} else {
+			type_name = fmt.tprintf("%v", entity.type.kind)
+		}
+		fmt.printf("      Local variable: %s : %s\n", name, type_name)
 
 		// Add to current scope (procedure or block scope)
 		if !add_entity(info, entity) {
@@ -629,12 +669,16 @@ check_assignment_statement :: proc(info: ^CheckerInfo, assign: ^ast.Assign_Stmt)
 check_expression :: proc(info: ^CheckerInfo, expr: ^ast.Expr) -> ^Type {
 	#partial switch e in expr.derived {
 	case ^ast.Basic_Lit:
-		// Literal values
+		// Literal values - return untyped types initially
 		#partial switch e.tok.kind {
 		case .Integer:
-			return info.builtin_int
+			return t_untyped_integer
 		case .Float:
-			return info.builtin_float
+			return t_untyped_float
+		case .String:
+			return t_untyped_string
+		case .Rune:
+			return t_untyped_rune
 		case:
 			fmt.printf("    Unhandled literal type: %v\n", e.tok.kind)
 			return nil
@@ -673,16 +717,47 @@ check_expression :: proc(info: ^CheckerInfo, expr: ^ast.Expr) -> ^Type {
 	case ^ast.Call_Expr:
 		// Function call expression
 		// Get the function being called
+		fmt.printf("    Checking function call\n")
 		ident, ident_ok := e.expr.derived.(^ast.Ident)
 		if ident_ok {
 			// Look up the function
 			entity := lookup_entity(info, ident.name)
 			if entity != nil {
 				if entity.kind == .PROCEDURE {
-					// Get the actual return type from the procedure type
+					// Check argument types
 					if entity.type != nil && entity.type.kind == .Proc {
 						proc_type, proc_ok := entity.type.variant.(TypeProc)
 						if proc_ok {
+							// Check each argument
+							if proc_type.params != nil && proc_type.params.kind == .Tuple {
+								params_tuple, params_ok := proc_type.params.variant.(TypeTuple)
+								if params_ok {
+									if len(e.args) != len(params_tuple.types) {
+										fmt.eprintf("ERROR: Function '%s' expects %d arguments but got %d\n", 
+											ident.name, len(params_tuple.types), len(e.args))
+										return nil
+									}
+									
+									// Type check each argument
+									for i in 0..<len(e.args) {
+										arg := e.args[i]
+										arg_type := check_expression(info, arg)
+										param_type := params_tuple.types[i]
+										
+										// Check if argument type is convertible to parameter type
+										if arg_type != nil && param_type != nil {
+											if !is_type_convertible(arg_type, param_type) {
+												arg_name := type_to_string(arg_type)
+												param_name := type_to_string(param_type)
+												error(arg.pos, "Cannot convert %s to %s in argument %d of '%s'",
+													arg_name, param_name, i+1, ident.name)
+											}
+										}
+									}
+								}
+							}
+							
+							// Return the result type
 							if proc_type.results != nil && proc_type.results.kind == .Tuple {
 								tuple, tuple_ok := proc_type.results.variant.(TypeTuple)
 								if tuple_ok && len(tuple.types) > 0 {
@@ -722,13 +797,15 @@ resolve_type_spec :: proc(info: ^CheckerInfo, type_expr: ^ast.Expr) -> ^Type {
 	
 	// Handle identifier types (e.g., "i32", "int", etc.)
 	if ident, ok := type_expr.derived.(^ast.Ident); ok {
+		// Try to get builtin type first
+		if builtin := get_builtin_type(ident.name); builtin != nil {
+			return builtin
+		}
+		
+		// Handle legacy aliases
 		switch ident.name {
-		case "i32", "int":
-			return info.builtin_int
-		case "f32", "float":
-			return info.builtin_float  
-		case "bool":
-			return info.builtin_bool
+		case "float":
+			return t_f32
 		case "void":
 			return info.builtin_void
 		case:

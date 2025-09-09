@@ -1,0 +1,16 @@
+package main
+
+// Test untyped literals
+
+main :: proc() -> i32 {
+    // These should all work - untyped literals converting to typed variables
+    a := 42           // untyped int -> i32 (default)
+    b: i32 = 100      // untyped int -> i32 (explicit)
+    c: i64 = 200      // untyped int -> i64 (explicit)
+    d: f32 = 10       // untyped int -> f32 (allowed)
+    e: f64 = 20       // untyped int -> f64 (allowed)
+    f := 3.14         // untyped float -> f64 (default)
+    g: f32 = 2.71     // untyped float -> f32 (explicit)
+    
+    return b
+}

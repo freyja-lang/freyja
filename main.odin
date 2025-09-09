@@ -26,6 +26,13 @@ compile_file :: proc(filepath: string) -> bool {
 		fmt.eprintln("\nCompilation failed at type checking stage")
 		return false
 	}
+	
+	// Stop if there were any type errors
+	if check_result.error_count > 0 {
+		fmt.eprintln("\nCompilation stopped due to type errors")
+		fmt.eprintf("%d error(s), %d warning(s)\n", check_result.error_count, check_result.warning_count)
+		return false
+	}
 
 	// Step 3: Generate IR
 	ir_result := llvm_backend.generate_ir(parse_result, check_result)
