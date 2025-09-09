@@ -3,6 +3,7 @@ package checker
 import llvm "../llvm"
 import "../parser"
 import "core:fmt"
+import "core:strconv"
 import "core:odin/ast"
 import "core:odin/tokenizer"
 
@@ -700,16 +701,45 @@ check_expression :: proc(info: ^CheckerInfo, expr: ^ast.Expr) -> ^Type {
 			return nil
 		}
 
-		// For now, assume both operands must have same type
-		if lhs_type != rhs_type {
-			fmt.eprintln("ERROR: Type mismatch in binary expression")
-			return nil
-		}
-
-		// Result type depends on operation
+		// Check type compatibility for the operation
 		#partial switch e.op.kind {
-		case .Add, .Sub, .Mul:
+		case .Add, .Sub:
+			// Addition and subtraction require same types
+			if lhs_type != rhs_type {
+				fmt.eprintln("ERROR: Type mismatch in arithmetic expression")
+				return nil
+			}
 			return lhs_type // Arithmetic preserves type
+			
+		case .Mul:
+			// Multiplication can be:
+			// 1. Same types (scalar * scalar, matrix * matrix)
+			// 2. Matrix * scalar or scalar * matrix
+			if lhs_type == rhs_type {
+				// Same types - straightforward
+				return lhs_type
+			}
+			
+			// Check for matrix-scalar multiplication
+			if lhs_type.kind == .Matrix && is_scalar_type(rhs_type) {
+				fmt.printf("  Matrix-scalar multiplication: matrix * scalar\n")
+				return lhs_type // Result is matrix type
+			}
+			if is_scalar_type(lhs_type) && rhs_type.kind == .Matrix {
+				fmt.printf("  Scalar-matrix multiplication: scalar * matrix\n")
+				return rhs_type // Result is matrix type
+			}
+			
+			// Matrix-matrix multiplication
+			if lhs_type.kind == .Matrix && rhs_type.kind == .Matrix {
+				fmt.printf("  Matrix-matrix multiplication\n")
+				// TODO: Check dimension compatibility (lhs cols == rhs rows)
+				// For now, assume compatible and return left type
+				return lhs_type
+			}
+			
+			fmt.eprintln("ERROR: Invalid types for multiplication")
+			return nil
 		case:
 			fmt.printf("ERROR: Unhandled binary operator: %v\n", e.op.kind)
 			return nil
@@ -781,6 +811,46 @@ check_expression :: proc(info: ^CheckerInfo, expr: ^ast.Expr) -> ^Type {
 			fmt.eprintln("ERROR: Complex function expressions not yet supported")
 			return nil
 		}
+	
+	case ^ast.Comp_Lit:
+		// Composite literal (e.g., {} for zero initialization or matrix literals)
+		// Need to determine type from context or explicit type in the literal
+		
+		// Get the type from the comp_lit's type expression if present
+		target_type: ^Type = nil
+		if e.type != nil {
+			target_type = resolve_type_spec(info, e.type)
+		}
+		
+		// If no explicit type, try to infer from context
+		if target_type == nil {
+			// The type will be determined from variable declaration context
+			// For now, return nil to indicate inference needed
+			return nil
+		}
+		
+		// Handle matrix composite literals
+		if target_type.kind == .Matrix {
+			fmt.printf("  Processing matrix composite literal\n")
+			
+			// For matrix literals with explicit data like:
+			// matrix[3,3]f64{{1,2,3}, {4,5,6}, {7,8,9}}
+			if len(e.elems) > 0 {
+				fmt.printf("  Matrix literal has %d row initializers\n", len(e.elems))
+				// TODO: Process the nested array initializers
+				// For now, just validate structure
+				return target_type
+			} else {
+				// Empty {} means zero initialization
+				fmt.printf("  Matrix zero initialization\n")
+				return target_type
+			}
+		}
+		
+		// Handle other composite literals (arrays, structs, etc.)
+		// For now, return the target type
+		return target_type
+	
 	case:
 		fmt.printf("  Unhandled expression type: %T\n", e)
 		return nil
@@ -820,6 +890,64 @@ resolve_type_spec :: proc(info: ^CheckerInfo, type_expr: ^ast.Expr) -> ^Type {
 		}
 	}
 	
+	// Handle Odin's matrix type and give it our Fortran semantics
+	if mat_type, ok := type_expr.derived.(^ast.Matrix_Type); ok {
+		// Get element type
+		elem_type := resolve_type_spec(info, mat_type.elem)
+		
+		// Get dimensions
+		dims := make([dynamic]MatrixDim, context.temp_allocator)
+		
+		// Row dimension
+		if mat_type.row_count != nil {
+			// For now, assume it's a literal
+			if lit, ok := mat_type.row_count.derived.(^ast.Basic_Lit); ok {
+				if lit.tok.kind == .Integer {
+					size, _ := strconv.parse_i64(lit.tok.text)
+					append(&dims, MatrixDim{
+						size = size,
+						lower_bound = 0,
+						upper_bound = size - 1,
+						stride = 1,
+					})
+				}
+			}
+		}
+		
+		// Column dimension
+		if mat_type.column_count != nil {
+			if lit, ok := mat_type.column_count.derived.(^ast.Basic_Lit); ok {
+				if lit.tok.kind == .Integer {
+					size, _ := strconv.parse_i64(lit.tok.text)
+					append(&dims, MatrixDim{
+						size = size,
+						lower_bound = 0,
+						upper_bound = size - 1,
+						stride = 1,
+					})
+				}
+			}
+		}
+		
+		// Create our Fortran-style matrix type
+		return make_type_matrix(elem_type, dims[:])
+	}
+	
 	// For other type expressions, default to int
 	return info.builtin_int
+}
+
+// Helper function to check if a type is a scalar (numeric) type
+is_scalar_type :: proc(type: ^Type) -> bool {
+	if type == nil {
+		return false
+	}
+	
+	if type.kind == .Basic {
+		if basic, ok := type.variant.(TypeBasic); ok {
+			return .Integer in basic.flags || .Float in basic.flags
+		}
+	}
+	
+	return false
 }

@@ -15,6 +15,7 @@ TypeKind :: enum {
 	Pointer,
 	Array,
 	Slice,
+	Matrix,  // Fortran-style matrix with runtime shape
 	Struct,
 	Union,
 	Enum,
@@ -133,6 +134,23 @@ TypeTuple :: struct {
 	offsets: [dynamic]i64,
 }
 
+// Fortran-style matrix type
+MatrixDim :: struct {
+	size:        i64,  // -1 for dynamic (:), positive for static
+	lower_bound: i64,  // Default 0, can be 1 for Fortran-style
+	upper_bound: i64,  // -1 for dynamic
+	stride:      i64,  // Default 1, for slicing
+}
+
+TypeMatrix :: struct {
+	elem:         ^Type,        // Element type
+	dims:         [dynamic]MatrixDim, // Dimension info
+	column_major: bool,         // Storage order (true by default)
+	heap_alloc:   bool,         // True if heap allocated
+	is_view:      bool,         // True if this is a view/slice
+	// Runtime descriptor will be generated as needed
+}
+
 TypeProc :: struct {
 	node:              ^ast.Expr,
 	scope:             ^Scope,
@@ -166,6 +184,7 @@ Type :: struct {
 		TypePointer,
 		TypeArray,
 		TypeSlice,
+		TypeMatrix,
 		TypeStruct,
 		TypeUnion,
 		TypeEnum,
@@ -256,6 +275,56 @@ make_type_tuple :: proc() -> ^Type {
 	t := make_type(.Tuple)
 	t.variant = TypeTuple{}
 	return t
+}
+
+// Allocation size threshold (16KB)
+MATRIX_STACK_THRESHOLD :: 16 * 1024
+
+make_type_matrix :: proc(elem: ^Type, dims: []MatrixDim = nil) -> ^Type {
+	t := make_type(.Matrix)
+	matrix_variant := TypeMatrix{
+		elem = elem,
+		column_major = true,  // Default to Fortran-style
+	}
+	
+	if dims != nil {
+		for dim in dims {
+			append(&matrix_variant.dims, dim)
+		}
+	}
+	
+	// Calculate if this should be heap allocated
+	if can_calculate_matrix_size(elem, dims) {
+		size := calculate_matrix_size(elem, dims)
+		matrix_variant.heap_alloc = size > MATRIX_STACK_THRESHOLD
+		t.cached_size = size
+	} else {
+		// Dynamic matrices are always heap allocated
+		matrix_variant.heap_alloc = true
+		t.cached_size = -1
+	}
+	
+	t.variant = matrix_variant
+	t.cached_align = 8  // Pointer alignment for descriptor
+	return t
+}
+
+can_calculate_matrix_size :: proc(elem: ^Type, dims: []MatrixDim) -> bool {
+	if elem == nil || dims == nil do return false
+	for dim in dims {
+		if dim.size < 0 do return false  // Dynamic dimension
+	}
+	return elem.cached_size > 0
+}
+
+calculate_matrix_size :: proc(elem: ^Type, dims: []MatrixDim) -> i64 {
+	if !can_calculate_matrix_size(elem, dims) do return -1
+	
+	size := elem.cached_size
+	for dim in dims {
+		size *= dim.size
+	}
+	return size
 }
 
 // Type checking helpers
@@ -449,6 +518,20 @@ type_to_string :: proc(t: ^Type) -> string {
 		if array, ok := t.variant.(TypeArray); ok {
 			elem_str := type_to_string(array.elem)
 			return fmt.tprintf("[%d]%s", array.count, elem_str)
+		}
+	case .Matrix:
+		if mat, ok := t.variant.(TypeMatrix); ok {
+			elem_str := type_to_string(mat.elem)
+			dim_str := ""
+			for d, idx in mat.dims {
+				if idx > 0 do dim_str = fmt.tprintf("%s, ", dim_str)
+				if d.size < 0 {
+					dim_str = fmt.tprintf("%s:", dim_str)
+				} else {
+					dim_str = fmt.tprintf("%s%d", dim_str, d.size)
+				}
+			}
+			return fmt.tprintf("matrix[%s]%s", dim_str, elem_str)
 		}
 	case .Proc:
 		return "proc"

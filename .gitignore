@@ -5,5 +5,7 @@ ols.json
 old/
 ref/
 docs/
+out/
+test_*
 *.old
 freyja

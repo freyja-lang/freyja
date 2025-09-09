@@ -964,7 +964,7 @@ foreign lib {
 	*
 	* @see llvm::Module::getFunction()
 	*/
-	LLVMGetNamedFunction :: proc(M: c.int, Name: cstring) -> c.int ---
+	LLVMGetNamedFunction :: proc(M: LLVMModuleRef, Name: cstring) -> LLVMValueRef ---
 
 	/**
 	* Obtain an iterator to the first Function in a Module.
@@ -1154,7 +1154,7 @@ foreign lib {
 	*
 	* @see llvm::StructType::create()
 	*/
-	LLVMStructTypeInContext :: proc(C: c.int, ElementTypes: ^c.int, ElementCount: c.uint, Packed: c.int) -> c.int ---
+	LLVMStructTypeInContext :: proc(C: LLVMContextRef, ElementTypes: ^LLVMTypeRef, ElementCount: c.uint, Packed: c.int) -> LLVMTypeRef ---
 
 	/**
 	* Create a new structure type in the global context.
@@ -1809,7 +1809,7 @@ foreign lib {
 	* LLVMConstArray2
 	* @see llvm::ConstantArray::get()
 	*/
-	LLVMConstArray :: proc(ElementTy: c.int, ConstantVals: ^c.int, Length: c.uint) -> c.int ---
+	LLVMConstArray :: proc(ElementTy: LLVMTypeRef, ConstantVals: ^LLVMValueRef, Length: c.uint) -> LLVMValueRef ---
 
 	/**
 	* Create a ConstantArray from values.
@@ -1908,7 +1908,7 @@ foreign lib {
 	LLVMGetGlobalParent :: proc(Global: c.int) -> c.int ---
 	LLVMIsDeclaration :: proc(Global: c.int) -> c.int ---
 	LLVMGetLinkage :: proc(Global: c.int) -> LLVMLinkage ---
-	LLVMSetLinkage :: proc(Global: c.int, Linkage: LLVMLinkage) ---
+	LLVMSetLinkage :: proc(Global: LLVMValueRef, Linkage: LLVMLinkage) ---
 	LLVMGetSection :: proc(Global: c.int) -> cstring ---
 	LLVMSetSection :: proc(Global: c.int, Section: cstring) ---
 	LLVMGetVisibility :: proc(Global: c.int) -> LLVMVisibility ---
@@ -2010,7 +2010,7 @@ foreign lib {
 	*
 	* @{
 	*/
-	LLVMAddGlobal :: proc(M: c.int, Ty: c.int, Name: cstring) -> c.int ---
+	LLVMAddGlobal :: proc(M: LLVMModuleRef, Ty: LLVMTypeRef, Name: cstring) -> LLVMValueRef ---
 	LLVMAddGlobalInAddressSpace :: proc(M: c.int, Ty: c.int, Name: cstring, AddressSpace: c.uint) -> c.int ---
 	LLVMGetNamedGlobal :: proc(M: c.int, Name: cstring) -> c.int ---
 	LLVMGetFirstGlobal :: proc(M: c.int) -> c.int ---
@@ -2019,7 +2019,7 @@ foreign lib {
 	LLVMGetPreviousGlobal :: proc(GlobalVar: c.int) -> c.int ---
 	LLVMDeleteGlobal :: proc(GlobalVar: c.int) ---
 	LLVMGetInitializer :: proc(GlobalVar: c.int) -> c.int ---
-	LLVMSetInitializer :: proc(GlobalVar: c.int, ConstantVal: c.int) ---
+	LLVMSetInitializer :: proc(GlobalVar: LLVMValueRef, ConstantVal: LLVMValueRef) ---
 	LLVMIsThreadLocal :: proc(GlobalVar: c.int) -> c.int ---
 	LLVMSetThreadLocal :: proc(GlobalVar: c.int, IsThreadLocal: c.int) ---
 	LLVMIsGlobalConstant :: proc(GlobalVar: c.int) -> c.int ---
@@ -3373,9 +3373,9 @@ foreign lib {
 	LLVMBuildFree :: proc() -> c.int ---
 	LLVMBuildLoad2 :: proc(Builder: LLVMBuilderRef, Ty: LLVMTypeRef, PointerVal: LLVMValueRef, Name: cstring) -> LLVMValueRef ---
 	LLVMBuildStore :: proc(Builder: LLVMBuilderRef, Val: LLVMValueRef, Ptr: LLVMValueRef) -> LLVMValueRef ---
-	LLVMBuildGEP2 :: proc(B: c.int, Ty: c.int, Pointer: c.int, Indices: ^c.int, NumIndices: c.uint, Name: cstring) -> c.int ---
+	LLVMBuildGEP2 :: proc(B: LLVMBuilderRef, Ty: LLVMTypeRef, Pointer: LLVMValueRef, Indices: ^LLVMValueRef, NumIndices: c.uint, Name: cstring) -> LLVMValueRef ---
 	LLVMBuildInBoundsGEP2 :: proc(B: c.int, Ty: c.int, Pointer: c.int, Indices: ^c.int, NumIndices: c.uint, Name: cstring) -> c.int ---
-	LLVMBuildStructGEP2 :: proc(B: c.int, Ty: c.int, Pointer: c.int, Idx: c.uint, Name: cstring) -> c.int ---
+	LLVMBuildStructGEP2 :: proc(B: LLVMBuilderRef, Ty: LLVMTypeRef, Pointer: LLVMValueRef, Idx: c.uint, Name: cstring) -> LLVMValueRef ---
 	LLVMBuildGlobalString :: proc(B: c.int, Str: cstring, Name: cstring) -> c.int ---
 	LLVMBuildGlobalStringPtr :: proc(B: c.int, Str: cstring, Name: cstring) -> c.int ---
 	LLVMGetVolatile :: proc(MemoryAccessInst: c.int) -> c.int ---
@@ -3405,7 +3405,7 @@ foreign lib {
 	LLVMBuildSExtOrBitCast :: proc() -> c.int ---
 	LLVMBuildTruncOrBitCast :: proc() -> c.int ---
 	LLVMBuildCast :: proc(B: c.int, Op: LLVMOpcode, Val: c.int, DestTy: c.int, Name: cstring) -> c.int ---
-	LLVMBuildPointerCast :: proc() -> c.int ---
+	LLVMBuildPointerCast :: proc(B: LLVMBuilderRef, Val: LLVMValueRef, DestTy: LLVMTypeRef, Name: cstring) -> LLVMValueRef ---
 	LLVMBuildIntCast2 :: proc() -> c.int ---
 	LLVMBuildFPCast :: proc() -> c.int ---
 

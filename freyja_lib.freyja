@@ -1,0 +1,23 @@
+package main
+
+// GEMM library for C integration
+// Performs C = A * B where A, B are 3x3 matrices
+
+@(export)
+test_dgemm :: proc() -> matrix[3,3]f64 {
+    // Create test matrices with explicit data
+    A: matrix[3,3]f64 = matrix[3,3]f64{
+        {1.0, 2.0, 3.0},
+        {4.0, 5.0, 6.0}, 
+        {7.0, 8.0, 9.0},
+    }
+    
+    B: matrix[3,3]f64 = matrix[3,3]f64{
+        {1.0, 0.0, 0.0},
+        {0.0, 1.0, 0.0},
+        {0.0, 0.0, 1.0},
+    }
+    
+    C: matrix[3,3]f64 = A * B  // Should result in C = A (identity multiply)
+    return C
+}

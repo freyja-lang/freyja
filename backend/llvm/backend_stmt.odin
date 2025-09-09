@@ -5,8 +5,65 @@ import "../../checker"
 import "core:fmt"
 import "core:strings"
 import "core:odin/ast"
+import "core:c"
 
 // Statement generation (like Odin's llvm_backend_stmt.cpp)
+
+// Get or declare malloc function
+get_or_declare_malloc :: proc(gen: ^IRGenerator) -> llvm.LLVMValueRef {
+	malloc_name := strings.clone_to_cstring("malloc", context.temp_allocator)
+	
+	// Check if already declared
+	if malloc_fn := llvm.LLVMGetNamedFunction(gen.module, malloc_name); malloc_fn != nil {
+		return malloc_fn
+	}
+	
+	// Declare malloc: void* malloc(size_t size)
+	i8_ptr_type := llvm.LLVMPointerType(llvm.LLVMInt8TypeInContext(gen.ctx), 0)
+	size_t_type := llvm.LLVMInt64TypeInContext(gen.ctx) // Assume 64-bit size_t
+	
+	malloc_type := llvm.LLVMFunctionType(i8_ptr_type, &size_t_type, 1, 0)
+	malloc_fn := llvm.LLVMAddFunction(gen.module, malloc_name, malloc_type)
+	
+	return malloc_fn
+}
+
+// Get or declare BLAS dgemm_ function
+get_or_declare_dgemm :: proc(gen: ^IRGenerator) -> llvm.LLVMValueRef {
+	dgemm_name := strings.clone_to_cstring("dgemm_", context.temp_allocator)
+	
+	// Check if already declared
+	if dgemm_fn := llvm.LLVMGetNamedFunction(gen.module, dgemm_name); dgemm_fn != nil {
+		return dgemm_fn
+	}
+	
+	// Declare dgemm_: void dgemm_(char*, char*, int*, int*, int*, double*, double*, int*, double*, int*, double*, double*, int*)
+	// Parameters: TRANSA, TRANSB, M, N, K, ALPHA, A, LDA, B, LDB, BETA, C, LDC
+	void_type := llvm.LLVMVoidTypeInContext(gen.ctx)
+	i8_ptr_type := llvm.LLVMPointerType(llvm.LLVMInt8TypeInContext(gen.ctx), 0)  // char*
+	i32_ptr_type := llvm.LLVMPointerType(llvm.LLVMInt32TypeInContext(gen.ctx), 0) // int*
+	f64_ptr_type := llvm.LLVMPointerType(llvm.LLVMDoubleTypeInContext(gen.ctx), 0) // double*
+	
+	param_types := make([dynamic]llvm.LLVMTypeRef, context.temp_allocator)
+	append(&param_types, i8_ptr_type)  // TRANSA
+	append(&param_types, i8_ptr_type)  // TRANSB
+	append(&param_types, i32_ptr_type) // M
+	append(&param_types, i32_ptr_type) // N
+	append(&param_types, i32_ptr_type) // K
+	append(&param_types, f64_ptr_type) // ALPHA
+	append(&param_types, f64_ptr_type) // A
+	append(&param_types, i32_ptr_type) // LDA
+	append(&param_types, f64_ptr_type) // B
+	append(&param_types, i32_ptr_type) // LDB
+	append(&param_types, f64_ptr_type) // BETA
+	append(&param_types, f64_ptr_type) // C
+	append(&param_types, i32_ptr_type) // LDC
+	
+	dgemm_type := llvm.LLVMFunctionType(void_type, raw_data(param_types), cast(c.uint)len(param_types), 0)
+	dgemm_fn := llvm.LLVMAddFunction(gen.module, dgemm_name, dgemm_type)
+	
+	return dgemm_fn
+}
 
 // Generate LLVM IR for a statement
 gen_stmt :: proc(gen: ^IRGenerator, stmt: ^ast.Stmt) -> bool {
@@ -85,15 +142,91 @@ gen_value_decl :: proc(gen: ^IRGenerator, decl: ^ast.Value_Decl) -> bool {
 		var_name := strings.clone_to_cstring(name, context.temp_allocator)
 		alloca := llvm.LLVMBuildAlloca(gen.builder, var_type, var_name)
 		
-		// Generate the initial value with target type hint
-		init_value := gen_expr_typed(gen, value_expr, entity.type)
-		if init_value == nil {
-			fmt.printf("Failed to generate initial value for %s\n", name)
-			return false
+		// Handle matrix descriptor initialization
+		if entity.type != nil && entity.type.kind == .Matrix {
+			mat_type := entity.type.variant.(checker.TypeMatrix)
+			
+			// Initialize dimensions in the descriptor
+			if len(mat_type.dims) >= 2 {
+				rows := cast(u64)mat_type.dims[0].size
+				cols := cast(u64)mat_type.dims[1].size
+				ld := cols // leading dimension = cols for column-major
+				
+				// Get element pointers for struct fields
+				i64_type := llvm.LLVMInt64TypeInContext(gen.ctx)
+				
+				// Initialize rows field (index 1)
+				rows_ptr := llvm.LLVMBuildStructGEP2(gen.builder, var_type, alloca, 1, strings.clone_to_cstring("rows_ptr", context.temp_allocator))
+				rows_val := llvm.LLVMConstInt(i64_type, rows, 0)
+				llvm.LLVMBuildStore(gen.builder, rows_val, rows_ptr)
+				
+				// Initialize cols field (index 2)
+				cols_ptr := llvm.LLVMBuildStructGEP2(gen.builder, var_type, alloca, 2, strings.clone_to_cstring("cols_ptr", context.temp_allocator))
+				cols_val := llvm.LLVMConstInt(i64_type, cols, 0)
+				llvm.LLVMBuildStore(gen.builder, cols_val, cols_ptr)
+				
+				// Initialize leading dimension field (index 3)
+				ld_ptr := llvm.LLVMBuildStructGEP2(gen.builder, var_type, alloca, 3, strings.clone_to_cstring("ld_ptr", context.temp_allocator))
+				ld_val := llvm.LLVMConstInt(i64_type, ld, 0)
+				llvm.LLVMBuildStore(gen.builder, ld_val, ld_ptr)
+				
+				// For stack matrices, data is already part of the struct (index 0)
+				// For heap matrices, allocate memory and set the pointer
+				if mat_type.heap_alloc {
+					// Calculate size in bytes
+					elem_type := type_to_llvm(gen, mat_type.elem)
+					elem_size_val := llvm.LLVMConstInt(llvm.LLVMInt64TypeInContext(gen.ctx), cast(u64)mat_type.elem.cached_size, 0)
+					total_elements_val := llvm.LLVMConstInt(llvm.LLVMInt64TypeInContext(gen.ctx), rows * cols, 0)
+					byte_size := llvm.LLVMBuildMul(gen.builder, elem_size_val, total_elements_val, strings.clone_to_cstring("byte_size", context.temp_allocator))
+					
+					// Call malloc to allocate heap memory
+					malloc_fn := get_or_declare_malloc(gen)
+					
+					// Get malloc function type
+					i8_ptr_type := llvm.LLVMPointerType(llvm.LLVMInt8TypeInContext(gen.ctx), 0)
+					size_t_type := llvm.LLVMInt64TypeInContext(gen.ctx)
+					malloc_type := llvm.LLVMFunctionType(i8_ptr_type, &size_t_type, 1, 0)
+					
+					heap_ptr := llvm.LLVMBuildCall2(gen.builder, malloc_type, malloc_fn, &byte_size, 1, strings.clone_to_cstring("heap_ptr", context.temp_allocator))
+					
+					// Cast to element type pointer
+					typed_ptr := llvm.LLVMBuildPointerCast(gen.builder, heap_ptr, 
+						llvm.LLVMPointerType(elem_type, 0), strings.clone_to_cstring("typed_ptr", context.temp_allocator))
+					
+					// Store the pointer in the data field (index 0)
+					data_ptr := llvm.LLVMBuildStructGEP2(gen.builder, var_type, alloca, 0, strings.clone_to_cstring("data_ptr", context.temp_allocator))
+					llvm.LLVMBuildStore(gen.builder, typed_ptr, data_ptr)
+					
+					fmt.printf("    Allocated %d bytes on heap for matrix\n", rows * cols * cast(u64)mat_type.elem.cached_size)
+				}
+				
+				fmt.printf("    Initialized matrix descriptor: %dx%d\n", rows, cols)
+			}
+			
+			// Process the initializer expression (if any)
+			if value_expr != nil {
+				fmt.printf("    Processing matrix initializer expression\n")
+				init_value := gen_expr_typed(gen, value_expr, entity.type)
+				if init_value != nil {
+					fmt.printf("    Generated matrix initialization from expression\n")
+					// Store the initialization value into the allocated variable
+					llvm.LLVMBuildStore(gen.builder, init_value, alloca)
+					fmt.printf("    Stored initialization value for %s\n", name)
+				} else {
+					fmt.printf("    No initializer value generated for %s\n", name)
+				}
+			}
+		} else {
+			// Generate the initial value with target type hint
+			init_value := gen_expr_typed(gen, value_expr, entity.type)
+			if init_value == nil {
+				fmt.printf("Failed to generate initial value for %s\n", name)
+				return false
+			}
+			
+			// Store the initial value
+			llvm.LLVMBuildStore(gen.builder, init_value, alloca)
 		}
-		
-		// Store the initial value
-		llvm.LLVMBuildStore(gen.builder, init_value, alloca)
 		
 		// Add to IR symbol table (we already have the entity from above)
 		gen.ir_symbols[entity] = alloca

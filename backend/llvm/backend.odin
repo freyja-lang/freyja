@@ -92,6 +92,10 @@ ir_gen_main_function :: proc(gen: ^IRGenerator) {
 // Generate IR from checker entities (Odin-style approach)
 ir_gen_from_entities :: proc(gen: ^IRGenerator) -> bool {
 	fmt.printf("Generating IR from entities...\n")
+	
+	// Pre-declare BLAS functions for matrix operations
+	_ = get_or_declare_dgemm(gen)
+	fmt.printf("Pre-declared BLAS dgemm function\n")
 
 	// First pass: Generate all procedure declarations
 	for entity in gen.checker_info.entities {
@@ -114,8 +118,8 @@ ir_gen_from_entities :: proc(gen: ^IRGenerator) -> bool {
 	}
 
 	if main_entity == nil {
-		fmt.eprintln("No main procedure found")
-		return false
+		fmt.eprintln("No main procedure found - generating library without main")
+		// For libraries, this is acceptable - continue IR generation
 	}
 
 	return true

@@ -1,5 +1,7 @@
 package checker
 
+import "core:fmt"
+
 // Built-in types following Odin's design
 
 // Global builtin type pointers
@@ -38,6 +40,10 @@ t_untyped_float:   ^Type
 t_untyped_string:  ^Type
 t_untyped_rune:    ^Type
 t_untyped_nil:     ^Type
+
+// Test matrix types (temporary until we have proper syntax)
+t_matrix_3x4_f32:     ^Type
+t_matrix_100x100_f32: ^Type
 
 // Initialize all builtin types
 init_builtin_types :: proc() {
@@ -84,6 +90,27 @@ init_builtin_types :: proc() {
 	t_untyped_string  = make_type_basic(.UntypedString,  0, "untyped string",  {.String, .Untyped})
 	t_untyped_rune    = make_type_basic(.UntypedRune,    0, "untyped rune",    {.Rune, .Untyped})
 	t_untyped_nil     = make_type_basic(.UntypedNil,     0, "untyped nil",     {.Untyped})
+	
+	// Test matrix types
+	// 3x4 f32 matrix = 48 bytes (stack allocated)
+	t_matrix_3x4_f32 = make_type_matrix(t_f32, []MatrixDim{
+		{size = 3, lower_bound = 0, upper_bound = 2, stride = 1},
+		{size = 4, lower_bound = 0, upper_bound = 3, stride = 1},
+	})
+	
+	// 100x100 f32 matrix = 40KB (heap allocated)
+	t_matrix_100x100_f32 = make_type_matrix(t_f32, []MatrixDim{
+		{size = 100, lower_bound = 0, upper_bound = 99, stride = 1},
+		{size = 100, lower_bound = 0, upper_bound = 99, stride = 1},
+	})
+	
+	// Debug output
+	if mat_3x4, ok := t_matrix_3x4_f32.variant.(TypeMatrix); ok {
+		fmt.printf("3x4 matrix: heap=%v, size=%d bytes\n", mat_3x4.heap_alloc, t_matrix_3x4_f32.cached_size)
+	}
+	if mat_100x100, ok := t_matrix_100x100_f32.variant.(TypeMatrix); ok {
+		fmt.printf("100x100 matrix: heap=%v, size=%d bytes\n", mat_100x100.heap_alloc, t_matrix_100x100_f32.cached_size)
+	}
 }
 
 // Get the default type for an untyped type
@@ -156,6 +183,10 @@ get_builtin_type :: proc(name: string) -> ^Type {
 	case "string": return t_string
 	case "rune":   return t_rune
 	case "rawptr": return t_rawptr
+	
+	// Temporary matrix types
+	case "matrix_3x4_f32":     return t_matrix_3x4_f32
+	case "matrix_100x100_f32": return t_matrix_100x100_f32
 	}
 	
 	return nil

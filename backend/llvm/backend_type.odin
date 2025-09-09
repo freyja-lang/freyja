@@ -3,6 +3,7 @@ package llvm_backend
 import llvm "../../llvm"
 import "../../checker"
 import "core:fmt"
+import "core:c"
 
 // Type conversion (like Odin's llvm_backend_type.cpp)
 
@@ -62,6 +63,52 @@ type_to_llvm :: proc(gen: ^IRGenerator, type: ^checker.Type) -> llvm.LLVMTypeRef
 		if array_ok {
 			elem_type := type_to_llvm(gen, array.elem)
 			return llvm.LLVMArrayType(elem_type, cast(u32)array.count)
+		}
+		return llvm.LLVMVoidTypeInContext(gen.ctx)
+	
+	case .Matrix:
+		// For matrices, create a descriptor structure
+		// { ptr data, i64 rows, i64 cols, i64 ld }
+		mat, mat_ok := type.variant.(checker.TypeMatrix)
+		if mat_ok {
+			// Create the descriptor struct type
+			// We'll use: { [N x elem], i64, i64, i64 } for stack-allocated matrices
+			// For heap: { ptr, i64, i64, i64 }
+			
+			elem_type := type_to_llvm(gen, mat.elem)
+			
+			// Calculate total elements
+			total_elements: u32 = 1
+			for dim in mat.dims {
+				if dim.size > 0 {
+					total_elements *= cast(u32)dim.size
+				}
+			}
+			
+			// Create struct members
+			member_types := make([dynamic]llvm.LLVMTypeRef, context.temp_allocator)
+			
+			if mat.heap_alloc {
+				// Heap allocation: { ptr, i64, i64, i64 }
+				append(&member_types, llvm.LLVMPointerType(elem_type, 0))
+			} else {
+				// Stack allocation: { [N x elem], i64, i64, i64 }
+				append(&member_types, llvm.LLVMArrayType(elem_type, total_elements))
+			}
+			// Rows (i64)
+			append(&member_types, llvm.LLVMInt64TypeInContext(gen.ctx))
+			// Cols (i64)
+			append(&member_types, llvm.LLVMInt64TypeInContext(gen.ctx))
+			// Leading dimension (i64)
+			append(&member_types, llvm.LLVMInt64TypeInContext(gen.ctx))
+			
+			// Create the struct type
+			return llvm.LLVMStructTypeInContext(
+				gen.ctx,
+				raw_data(member_types),
+				cast(c.uint)len(member_types),
+				0, // not packed
+			)
 		}
 		return llvm.LLVMVoidTypeInContext(gen.ctx)
 		

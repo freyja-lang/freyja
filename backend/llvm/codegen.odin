@@ -1,6 +1,7 @@
 package llvm_backend
 
 import "core:fmt"
+import "core:os"
 import llvm "../../llvm"
 
 CodegenResult :: struct {
@@ -22,19 +23,28 @@ generate_code :: proc(
 		return CodegenResult{success = false}
 	}
 
-	// Write bitcode for now
-	bitcode_path := "out/output.bc"
-	result := llvm.LLVMWriteBitcodeToFile(opt_result.module, cstring(raw_data(bitcode_path)))
-
-	if result != 0 {
-		fmt.eprintln("Failed to write bitcode")
+	// Write LLVM IR text for linking
+	ir_path := "out/output.ll"
+	ir_string := llvm.LLVMPrintModuleToString(opt_result.module)
+	defer llvm.LLVMDisposeMessage(ir_string)
+	
+	// Write IR to file
+	if !os.write_entire_file(ir_path, transmute([]u8)string(ir_string)) {
+		fmt.eprintln("Failed to write IR file")
 		return CodegenResult{success = false}
 	}
 
-	fmt.printf("Bitcode written to %s\n", bitcode_path)
+	fmt.printf("LLVM IR written to %s\n", ir_path)
+	
+	// Also keep bitcode for compatibility
+	bitcode_path := "out/output.bc"
+	result := llvm.LLVMWriteBitcodeToFile(opt_result.module, cstring(raw_data(bitcode_path)))
+	if result == 0 {
+		fmt.printf("Bitcode written to %s\n", bitcode_path)
+	}
 
 	// TODO: Use LLVM's target machine to generate actual object files
 	// TODO: Link with system libraries
 
-	return CodegenResult{output_file = bitcode_path, success = true}
+	return CodegenResult{output_file = ir_path, success = true}
 }
