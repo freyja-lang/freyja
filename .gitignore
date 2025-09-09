@@ -2,3 +2,8 @@
 *.pdb
 .vscode
 ols.json
+old/
+ref/
+docs/
+*.old
+freyja
