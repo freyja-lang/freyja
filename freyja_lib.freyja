@@ -18,6 +18,8 @@ test_dgemm :: proc() -> matrix[3,3]f64 {
         {0.0, 0.0, 1.0},
     }
     
-    C: matrix[3,3]f64 = A * B  // Should result in C = A (identity multiply)
+    // Pre-allocate output matrix (zero-initialized)
+    C: matrix[3,3]f64 = {}
+    mul(A, B, &C)  // C = A * B, result stored in pre-allocated C
     return C
 }

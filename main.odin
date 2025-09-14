@@ -2,19 +2,19 @@ package freyja
 
 //   Parse → Check → Generate IR → Optimize → Link
 
-import llvm "./llvm"
-import llvm_backend "backend/llvm"
-import "checker"
 import "core:fmt"
 import "core:os"
-import "parser"
+import llvm_backend "src/backend/llvm"
+import "src/checker"
+import llvm "src/llvm"
+import "src/parser"
 
 compile_file :: proc(filepath: string) -> bool {
 	fmt.printf("Compiling %s\n", filepath)
 	fmt.println("=====================================")
 
 	// Step 1: Parse
-	parse_result := parser.parse_file(filepath)
+	parse_result := parser.parse_freyja_file(filepath)
 	if !parse_result.success {
 		fmt.eprintln("\nCompilation failed at parsing stage")
 		return false
@@ -22,15 +22,20 @@ compile_file :: proc(filepath: string) -> bool {
 
 	// Step 2: Type check
 	check_result := checker.check(parse_result)
+	
 	if !check_result.success {
 		fmt.eprintln("\nCompilation failed at type checking stage")
 		return false
 	}
-	
+
 	// Stop if there were any type errors
 	if check_result.error_count > 0 {
 		fmt.eprintln("\nCompilation stopped due to type errors")
-		fmt.eprintf("%d error(s), %d warning(s)\n", check_result.error_count, check_result.warning_count)
+		fmt.eprintf(
+			"%d error(s), %d warning(s)\n",
+			check_result.error_count,
+			check_result.warning_count,
+		)
 		return false
 	}
 

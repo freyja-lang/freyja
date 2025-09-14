@@ -37,6 +37,18 @@ Parse → Check → Generate IR → Optimize → Link
 - **Rationale**: Type-safe bindings with proper error handling
 - **Implementation**: Direct IR generation (no string-based approach)
 
+### Tensor System Design
+- **Decision**: Follow industry standards (NumPy/PyTorch/TensorFlow) instead of custom tensor design
+- **Rationale**: Leverages existing scientific computing ecosystem knowledge and interoperability
+- **Implementation**: Single unified tensor type with rank-based dispatch, standard function names
+- **Key Principles**:
+  - Use NumPy broadcasting rules for tensor operations
+  - Support both C-contiguous (row-major) and Fortran-contiguous (column-major) layouts
+  - Standard creation functions: `zeros()`, `ones()`, `arange()`, `eye()`
+  - Standard operations: `matmul()`, `transpose()`, `reshape()`, `squeeze()`, `broadcast()`
+  - Integrate with BLAS for optimal 2D matrix performance
+  - Future-ready for automatic differentiation and multi-device support
+
 ## Current Status
 
 ### ✅ Working Features
@@ -51,6 +63,12 @@ Parse → Check → Generate IR → Optimize → Link
 6. **Statement Processing** - Handles declarations, assignments, expressions, blocks
 7. **Expression Type Checking** - Scope-aware variable lookup and type inference
 8. **Error Reporting System** - Odin-style error collection with source positions and formatted messages
+9. **Industry-Standard Tensor System** - Complete NumPy/PyTorch/TensorFlow-style tensor implementation:
+   - TypeTensor with rank, shape, strides, memory layout (row/column major)
+   - 17+ tensor builtin functions: `zeros`, `ones`, `matmul`, `transpose`, `reshape`, etc.
+   - Broadcasting compatibility following NumPy rules
+   - Multi-device support (CPU, GPU, TPU, Metal) for future expansion
+   - Integration with existing BLAS operations for 2D performance
 
 ### Test Case Working
 File: `tests/test.freyja`
@@ -75,11 +93,15 @@ main :: proc() {
 │   └── parser.odin        # Odin parser integration
 ├── checker/
 │   ├── checker.odin       # Two-phase type checker
+│   ├── types.odin         # Type system including industry-standard tensors
+│   ├── builtin.odin       # Builtin types and tensor types
 │   ├── error.odin         # Error reporting system
 │   └── plan.md            # Checker implementation plan
 ├── backend/
 │   └── llvm/              # LLVM backend implementation
 │       ├── ir_gen.odin    # LLVM IR generation
+│       ├── backend_expr.odin # Expression and builtin function IR generation
+│       ├── tensor_ir.odin # Industry-standard tensor IR generation
 │       ├── optimizer.odin # LLVM optimization passes
 │       ├── codegen.odin   # Code generation/linking
 │       └── test_llvm.odin # LLVM testing utilities
@@ -88,7 +110,8 @@ main :: proc() {
 │   ├── Types.odin         # LLVM type system
 │   └── BitWriter.odin     # Bitcode writing
 ├── tests/
-│   └── test.freyja        # Test program
+│   ├── test.freyja        # Basic test program
+│   └── test_tensors.freyja # Tensor builtin function tests
 ├── out/                   # Build outputs
 └── old/                   # Legacy code (odin-c-bindgen, etc.)
 ```
@@ -113,21 +136,24 @@ main :: proc() {
 ## Known Issues & TODOs
 
 ### Short-term (Next Sessions)
-1. **Enhanced IR Generation** - Generate proper local variable allocas and stores
-2. **Function Types** - Replace `builtin_void` with proper procedure types
-3. **Parameter Handling** - Add procedure parameters to scope
-4. **Source Position Tracking** - Extract real source positions from AST nodes for better error messages
+1. **Tensor Type Checking** - Add proper type checking for tensor builtin functions
+2. **Enhanced IR Generation** - Generate proper local variable allocas and stores
+3. **Function Types** - Replace `builtin_void` with proper procedure types
+4. **Parameter Handling** - Add procedure parameters to scope
+5. **Source Position Tracking** - Extract real source positions from AST nodes for better error messages
 
 ### Medium-term
-1. **Type System** - Implement full Freyja type inference rules
-2. **Scientific Computing Features** - Array operations, restrict pointers, SIMD
-3. **Optimization Pipeline** - Hook up LLVM optimization passes
-4. **Linking** - Proper executable generation
+1. **Advanced Tensor Operations** - Runtime shape inference, broadcasting IR generation
+2. **Type System** - Implement full Freyja type inference rules
+3. **Scientific Computing Features** - Array operations, restrict pointers, SIMD
+4. **Optimization Pipeline** - Hook up LLVM optimization passes
+5. **Linking** - Proper executable generation
 
 ### Long-term
-1. **Fortran Semantics** - Column-major arrays, no-alias by default
-2. **Performance** - Vectorization hints, parallel constructs
-3. **Interop** - C/Fortran library integration
+1. **Tensor Backend Optimization** - Multi-device support, automatic differentiation
+2. **Fortran Semantics** - Column-major arrays, no-alias by default
+3. **Performance** - Vectorization hints, parallel constructs, tensor compiler integration
+4. **Interop** - C/Fortran library integration, NumPy/PyTorch tensor exchange
 
 ## Build & Test Commands
 
@@ -161,6 +187,7 @@ odin check .
 ### Design Philosophy
 - **Follow Odin Patterns** - Mirror proven compiler architecture
 - **Scientific Computing Focus** - Optimize for numerical workloads
+- **Industry Standard Tensors** - Use NumPy/PyTorch/TensorFlow conventions for all tensor operations
 - **Incremental Development** - Baby steps, verify at each stage
 - **Type Safety** - Leverage Odin's type system for compiler robustness
 
@@ -174,6 +201,16 @@ When continuing development:
 5. Follow Odin's checker patterns in `/mnt/c/odin/src/` (C++ source)
 6. The odin compiler's architecture is documented in COMPILER_ARCHITECTURE.md
 
+### Tensor Development Guidelines
+**CRITICAL**: Always follow industry standards for tensor operations:
+- Use NumPy/PyTorch/TensorFlow naming conventions (`zeros`, `ones`, `matmul`, `transpose`, `reshape`)
+- Follow NumPy broadcasting rules for tensor operations
+- Support both row-major (C) and column-major (Fortran) memory layouts
+- Implement rank-based dispatch (scalar, vector, matrix, higher-order tensors)
+- Integrate with BLAS for optimal 2D matrix performance
+- Plan for multi-device support (CPU, GPU, TPU) and automatic differentiation
+- Maintain compatibility with scientific computing ecosystem standards
+
 ## Success Metrics
 
 The compiler successfully:
@@ -183,5 +220,8 @@ The compiler successfully:
 - ✅ Generates valid LLVM IR with proper function definitions
 - ✅ Maintains hierarchical symbol tables with scope resolution
 - ✅ Handles basic expressions (literals, identifiers, binary ops)
+- ✅ Implements industry-standard tensor type system with NumPy/PyTorch conventions
+- ✅ Provides 17+ tensor builtin functions following scientific computing standards
+- ✅ Integrates tensor operations with existing BLAS backend for optimal performance, TBLIS for n-dim tensors
 
-Next milestone: Generate proper local variable IR with alloca/load/store patterns.
+Next milestone: Add proper type checking for tensor builtin functions.

@@ -9,3 +9,12 @@ out/
 test_*
 *.old
 freyja
+*.a
+*.o
+*.bin
+*.ll
+*.s
+*.mod
+
+*.txt
+*.md

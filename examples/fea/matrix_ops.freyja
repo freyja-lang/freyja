@@ -1,0 +1,194 @@
+// Freyja source file for matrix operations
+// This would be compiled with: freyja compile matrix_ops.freyja -emit-bindings -o freyja_blas
+package matrix_ops
+
+// Configure library generation
+@(export)
+@(library_name="freyja_blas")
+
+// Level 1 BLAS operations
+
+// DAXPY: y = a*x + y
+@(export, link_name="freyja_daxpy")
+daxpy :: proc(n: int, a: f64, x: []f64, incx: int, y: []f64, incy: int) {
+    // Freyja could optimize this with SIMD/vectorization
+    @parallel for i in 0..<n {
+        y[i*incy] += a * x[i*incx]
+    }
+}
+
+// DDOT: dot product
+@(export, link_name="freyja_ddot")
+ddot :: proc(n: int, x: []f64, incx: int, y: []f64, incy: int) -> f64 {
+    sum: f64 = 0.0
+    // Freyja could use reduction and SIMD here
+    @parallel_reduce(+) for i in 0..<n {
+        sum += x[i*incx] * y[i*incy]
+    }
+    return sum
+}
+
+// DNRM2: Euclidean norm
+@(export, link_name="freyja_dnrm2")
+dnrm2 :: proc(n: int, x: []f64, incx: int) -> f64 {
+    sum: f64 = 0.0
+    @parallel_reduce(+) for i in 0..<n {
+        sum += x[i*incx] * x[i*incx]
+    }
+    return sqrt(sum)
+}
+
+// Level 2 BLAS operations
+
+// DGEMV: y = alpha*A*x + beta*y
+@(export, link_name="freyja_dgemv")
+dgemv :: proc(trans: char, m: int, n: int, 
+              alpha: f64, A: []f64, lda: int,
+              x: []f64, incx: int,
+              beta: f64, y: []f64, incy: int) {
+    
+    if trans == 'N' {
+        // No transpose: y = alpha*A*x + beta*y
+        @parallel for i in 0..<m {
+            sum: f64 = 0.0
+            @simd for j in 0..<n {
+                sum += A[i*lda + j] * x[j*incx]
+            }
+            y[i*incy] = alpha * sum + beta * y[i*incy]
+        }
+    } else {
+        // Transpose: y = alpha*A^T*x + beta*y  
+        @parallel for j in 0..<n {
+            sum: f64 = 0.0
+            @simd for i in 0..<m {
+                sum += A[i*lda + j] * x[i*incx]
+            }
+            y[j*incy] = alpha * sum + beta * y[j*incy]
+        }
+    }
+}
+
+// Level 3 BLAS operations
+
+// DGEMM: C = alpha*A*B + beta*C
+@(export, link_name="freyja_dgemm")
+@(builtin)  // This is already a builtin in Freyja
+dgemm :: proc(transA: char, transB: char,
+              m: int, n: int, k: int,
+              alpha: f64, A: []f64, lda: int,
+              B: []f64, ldb: int,
+              beta: f64, C: []f64, ldc: int) {
+    
+    // The builtin would handle this efficiently with:
+    // - Cache blocking/tiling
+    // - SIMD vectorization  
+    // - Parallel execution
+    // - Possible GPU offload
+    
+    // Simplified implementation (builtin would be much more optimized)
+    @parallel for i in 0..<m {
+        for j in 0..<n {
+            sum: f64 = 0.0
+            @simd for l in 0..<k {
+                a_val := if transA == 'N' then A[i*lda + l] else A[l*lda + i]
+                b_val := if transB == 'N' then B[l*ldb + j] else B[j*ldb + l]
+                sum += a_val * b_val
+            }
+            C[i*ldc + j] = alpha * sum + beta * C[i*ldc + j]
+        }
+    }
+}
+
+// LAPACK-like operations
+
+// LU decomposition with partial pivoting
+@(export, link_name="freyja_dgetrf")
+dgetrf :: proc(m: int, n: int, A: []f64, lda: int, ipiv: []int, info: ^int) {
+    min_dim := min(m, n)
+    
+    for k in 0..<min_dim {
+        // Find pivot
+        max_val := abs(A[k*lda + k])
+        max_row := k
+        
+        for i in (k+1)..<m {
+            val := abs(A[i*lda + k])
+            if val > max_val {
+                max_val = val
+                max_row = i
+            }
+        }
+        
+        ipiv[k] = max_row + 1  // Fortran-style 1-based indexing
+        
+        // Swap rows if needed
+        if max_row != k {
+            @simd for j in 0..<n {
+                A[k*lda + j], A[max_row*lda + j] = A[max_row*lda + j], A[k*lda + j]
+            }
+        }
+        
+        // Check for singularity
+        if abs(A[k*lda + k]) < 1e-12 {
+            info^ = k + 1
+            return
+        }
+        
+        // Scale column
+        pivot_inv := 1.0 / A[k*lda + k]
+        @simd for i in (k+1)..<m {
+            A[i*lda + k] *= pivot_inv
+        }
+        
+        // Update trailing submatrix
+        @parallel for i in (k+1)..<m {
+            factor := A[i*lda + k]
+            @simd for j in (k+1)..<n {
+                A[i*lda + j] -= factor * A[k*lda + j]
+            }
+        }
+    }
+    
+    info^ = 0
+}
+
+// Cholesky decomposition
+@(export, link_name="freyja_dpotrf")
+dpotrf :: proc(uplo: char, n: int, A: []f64, lda: int, info: ^int) {
+    if uplo == 'L' {
+        // Lower triangular
+        for j in 0..<n {
+            // Compute L(j,j) and test for positive definiteness
+            sum: f64 = A[j*lda + j]
+            @simd for k in 0..<j {
+                sum -= A[j*lda + k] * A[j*lda + k]
+            }
+            
+            if sum <= 0.0 {
+                info^ = j + 1
+                return
+            }
+            
+            A[j*lda + j] = sqrt(sum)
+            
+            // Compute elements j+1:n of column j
+            @parallel for i in (j+1)..<n {
+                sum := A[i*lda + j]
+                @simd for k in 0..<j {
+                    sum -= A[i*lda + k] * A[j*lda + k]
+                }
+                A[i*lda + j] = sum / A[j*lda + j]
+            }
+        }
+    } else {
+        // Upper triangular - similar but with different indexing
+        // Implementation omitted for brevity
+    }
+    
+    info^ = 0
+}
+
+// Compiler directives for optimization
+@(compiler_flags="-O3 -march=native -ffast-math")
+@(prefer_column_major)  // Freyja's default for better cache usage
+@(enable_gpu_offload)   // For large matrices
