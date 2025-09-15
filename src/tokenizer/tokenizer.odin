@@ -558,6 +558,12 @@ scan :: proc(t: ^Tokenizer) -> Token {
 			switch t.ch {
 			case '0'..='9':
 				kind, lit = scan_number(t, true)
+			case '*':
+				advance_rune(t)
+				kind = .Dot_Mul
+			case '/':
+				advance_rune(t)
+				kind = .Dot_Quo
 			case '.':
 				advance_rune(t)
 				kind = .Ellipsis

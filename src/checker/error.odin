@@ -39,10 +39,11 @@ init_error_collector :: proc() {
 }
 
 // Add an error to the collector
-add_error :: proc(kind: ErrorKind, pos: tokenizer.Pos, message: string) {
+add_error :: proc(kind: ErrorKind, pos: tokenizer.Pos, message: string, end_pos := tokenizer.Pos{}) {
 	error_value := ErrorValue {
 		kind    = kind,
 		pos     = pos,
+		end_pos = end_pos,
 		message = message,
 	}
 
@@ -59,12 +60,18 @@ add_error :: proc(kind: ErrorKind, pos: tokenizer.Pos, message: string) {
 // Main error reporting functions (like Odin's error.cpp)
 error :: proc {
 	error_with_pos,
+	error_with_pos_range,
 	error_with_token,
 }
 
 error_with_pos :: proc(pos: tokenizer.Pos, fmt_str: string, args: ..any) {
 	message := fmt.aprintf(fmt_str, ..args)
 	add_error(.ERROR, pos, message)
+}
+
+error_with_pos_range :: proc(pos: tokenizer.Pos, end_pos: tokenizer.Pos, fmt_str: string, args: ..any) {
+	message := fmt.aprintf(fmt_str, ..args)
+	add_error(.ERROR, pos, message, end_pos)
 }
 
 error_with_token :: proc(token: tokenizer.Token, fmt_str: string, args: ..any) {
@@ -133,26 +140,26 @@ print_all_errors :: proc() {
 		return
 	}
 
-	fmt.printf("\n=== COMPILATION ERRORS ===\n")
+	// fmt.printf("\n=== COMPILATION ERRORS ===\n")
 
 	for error_value in global_error_collector.errors {
 		pos_str := format_pos(error_value.pos)
 
 		switch error_value.kind {
 		case .ERROR:
-			fmt.printf("Error: %s: %s\n", pos_str, error_value.message)
+			// fmt.printf("Error: %s: %s\n", pos_str, error_value.message)
 		case .WARNING:
-			fmt.printf("Warning: %s: %s\n", pos_str, error_value.message)
+			// fmt.printf("Warning: %s: %s\n", pos_str, error_value.message)
 		case .SYNTAX_ERROR:
-			fmt.printf("Syntax Error: %s: %s\n", pos_str, error_value.message)
+			// fmt.printf("Syntax Error: %s: %s\n", pos_str, error_value.message)
 		}
 	}
 
-	fmt.printf(
-		"\n%d error(s), %d warning(s)\n",
-		global_error_collector.error_count,
-		global_error_collector.warning_count,
-	)
+	// fmt.printf(
+	// 	"\n%d error(s), %d warning(s)\n",
+	// 	global_error_collector.error_count,
+	// 	global_error_collector.warning_count,
+	// )
 }
 
 // Clear all errors (for testing)

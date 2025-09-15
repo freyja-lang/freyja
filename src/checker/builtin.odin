@@ -237,11 +237,11 @@ init_builtin_types :: proc() {
 	t_tensor_f64        = make_type_tensor(t_f64)                      // Double scalar
 	t_tensor_i32        = make_type_tensor(t_i32)                      // Integer scalar
 	
-	fmt.printf("Initialized tensor types:\n")
-	fmt.printf("  scalar f32: %s\n", type_to_string(t_tensor_f32))
-	fmt.printf("  vector f32: %s\n", type_to_string(t_tensor_vector_f32))
-	fmt.printf("  matrix f32: %s\n", type_to_string(t_tensor_matrix_f32))
-	fmt.printf("  3D tensor f32: %s\n", type_to_string(t_tensor_3d_f32))
+	// fmt.printf("Initialized tensor types:\n")
+	// fmt.printf("  scalar f32: %s\n", type_to_string(t_tensor_f32))
+	// fmt.printf("  vector f32: %s\n", type_to_string(t_tensor_vector_f32))
+	// fmt.printf("  matrix f32: %s\n", type_to_string(t_tensor_matrix_f32))
+	// fmt.printf("  3D tensor f32: %s\n", type_to_string(t_tensor_3d_f32))
 }
 
 // Get builtin type by name - O(1) lookup for common types

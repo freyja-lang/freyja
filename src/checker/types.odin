@@ -24,9 +24,9 @@ TypeKind :: enum {
 	// Special types
 	Proc,
 	Named,
-	
+	Generic,
+
 	// TODO: Add more as needed
-	// Generic,
 	// Map,
 	// DynamicArray,
 }
@@ -92,6 +92,15 @@ TypeNamed :: struct {
 
 TypePointer :: struct {
 	elem: ^Type,
+}
+
+// Generic type - following Odin's Type_Generic structure
+TypeGeneric :: struct {
+	id:          i64,      // Unique identifier for this generic
+	name:        string,   // Name of the generic parameter (e.g., "T", "M", "N")
+	specialized: ^Type,    // The concrete type this generic resolves to (nil if unresolved)
+	scope:       ^Scope,   // The scope where this generic is defined
+	entity:      ^Entity,  // Optional: Entity that defines this generic
 }
 
 TypeArray :: struct {
@@ -196,6 +205,7 @@ Type :: struct {
 		TypeBasic,
 		TypeNamed,
 		TypePointer,
+		TypeGeneric,
 		TypeArray,
 		TypeSlice,
 		TypeTensor,
@@ -271,6 +281,26 @@ make_type_pointer :: proc(elem: ^Type) -> ^Type {
 	t.variant = TypePointer{elem = elem}
 	t.cached_size = 8 // Assuming 64-bit pointers
 	t.cached_align = 8
+	return t
+}
+
+make_type_generic :: proc(scope: ^Scope, id: i64, name: string, specialized: ^Type = nil) -> ^Type {
+	t := make_type(.Generic)
+	t.variant = TypeGeneric{
+		id = id,
+		name = name,
+		specialized = specialized,
+		scope = scope,
+		entity = nil,
+	}
+	// Size and alignment depend on specialization
+	if specialized != nil {
+		t.cached_size = specialized.cached_size
+		t.cached_align = specialized.cached_align
+	} else {
+		t.cached_size = -1  // Unknown until specialized
+		t.cached_align = -1
+	}
 	return t
 }
 
@@ -466,6 +496,236 @@ is_type_proc :: proc(t: ^Type) -> bool {
 	return t.kind == .Proc
 }
 
+is_type_tensor :: proc(t: ^Type) -> bool {
+	if t == nil do return false
+	return t.kind == .Tensor
+}
+
+// Tensor dimension compatibility checking
+
+// Check if two tensor shapes are compatible for element-wise operations (addition, subtraction)
+tensors_same_shape :: proc(a, b: ^Type) -> bool {
+	if a == nil || b == nil do return false
+	if a.kind != .Tensor || b.kind != .Tensor do return false
+
+	a_tensor, a_ok := a.variant.(TypeTensor)
+	b_tensor, b_ok := b.variant.(TypeTensor)
+	if !a_ok || !b_ok do return false
+
+	// Must have same rank
+	if a_tensor.rank != b_tensor.rank do return false
+
+	// Check each dimension
+	for i := 0; i < int(a_tensor.rank); i += 1 {
+		a_dim := a_tensor.shape[i]
+		b_dim := b_tensor.shape[i]
+
+		// If both are static, they must match
+		if a_dim >= 0 && b_dim >= 0 {
+			if a_dim != b_dim do return false
+		}
+		// If either is dynamic (-1), we assume they'll match at runtime
+		// This allows operations on generic tensor dimensions
+	}
+
+	// Check element types match
+	return types_match(a_tensor.dtype, b_tensor.dtype)
+}
+
+// Check if tensors are compatible for matrix multiplication
+// Handles all standard cases:
+// - Matrix @ Matrix: (M, K) @ (K, N) -> (M, N)
+// - Matrix @ Vector: (M, K) @ (K,) -> (M,)
+// - Vector @ Matrix: (K,) @ (K, N) -> (N,)
+// - Vector @ Vector: (K,) @ (K,) -> scalar
+// For higher dims: broadcasting rules apply to batch dimensions
+tensors_matmul_compatible :: proc(a, b: ^Type) -> (compatible: bool, result_shape: []i64) {
+	if a == nil || b == nil do return false, nil
+	if a.kind != .Tensor || b.kind != .Tensor do return false, nil
+
+	a_tensor, a_ok := a.variant.(TypeTensor)
+	b_tensor, b_ok := b.variant.(TypeTensor)
+	if !a_ok || !b_ok do return false, nil
+
+	// Element types must match
+	if !types_match(a_tensor.dtype, b_tensor.dtype) do return false, nil
+
+	// Handle different rank combinations
+
+	// Matrix @ Matrix: (M, K) @ (K, N) -> (M, N)
+	if a_tensor.rank == 2 && b_tensor.rank == 2 {
+		a_rows := a_tensor.shape[0]
+		a_cols := a_tensor.shape[1]
+		b_rows := b_tensor.shape[0]
+		b_cols := b_tensor.shape[1]
+
+		// Check inner dimensions match (if static)
+		if a_cols >= 0 && b_rows >= 0 && a_cols != b_rows {
+			return false, nil
+		}
+
+		// Result shape is (M, N)
+		result_shape = make([]i64, 2)
+		result_shape[0] = a_rows
+		result_shape[1] = b_cols
+		return true, result_shape
+	}
+
+	// Matrix @ Vector: (M, K) @ (K,) -> (M,)
+	if a_tensor.rank == 2 && b_tensor.rank == 1 {
+		a_cols := a_tensor.shape[1]
+		b_size := b_tensor.shape[0]
+
+		if a_cols >= 0 && b_size >= 0 && a_cols != b_size {
+			return false, nil
+		}
+
+		result_shape = make([]i64, 1)
+		result_shape[0] = a_tensor.shape[0]
+		return true, result_shape
+	}
+
+	// Vector @ Matrix: (K,) @ (K, N) -> (N,)
+	// Note: This is treating the vector as a row vector
+	if a_tensor.rank == 1 && b_tensor.rank == 2 {
+		a_size := a_tensor.shape[0]
+		b_rows := b_tensor.shape[0]
+		b_cols := b_tensor.shape[1]
+
+		if a_size >= 0 && b_rows >= 0 && a_size != b_rows {
+			return false, nil
+		}
+
+		result_shape = make([]i64, 1)
+		result_shape[0] = b_cols
+		return true, result_shape
+	}
+
+	// Vector @ Vector: (K,) @ (K,) -> scalar (dot product)
+	if a_tensor.rank == 1 && b_tensor.rank == 1 {
+		a_size := a_tensor.shape[0]
+		b_size := b_tensor.shape[0]
+
+		if a_size >= 0 && b_size >= 0 && a_size != b_size {
+			return false, nil
+		}
+
+		// Result is a scalar (0-rank tensor)
+		result_shape = make([]i64, 0)
+		return true, result_shape
+	}
+
+	// Handle higher-dimensional tensors (batched operations)
+	if a_tensor.rank > 2 || b_tensor.rank > 2 {
+		// For tensors with rank > 2, the last two dimensions are treated as matrices
+		// and the leading dimensions must be broadcastable
+
+		// Extract batch dimensions and matrix dimensions
+		a_batch_dims := a_tensor.rank - 2
+		b_batch_dims := b_tensor.rank - 2
+
+		// Check if batch dimensions are broadcastable
+		// This is a simplified check - full implementation would use NumPy rules
+
+		// Get the matrix dimensions (last 2 dims)
+		a_mat_rows := a_tensor.shape[a_tensor.rank - 2]
+		a_mat_cols := a_tensor.shape[a_tensor.rank - 1]
+		b_mat_rows := b_tensor.shape[b_tensor.rank - 2]
+		b_mat_cols := b_tensor.shape[b_tensor.rank - 1]
+
+		// Check matrix dimension compatibility
+		if a_mat_cols >= 0 && b_mat_rows >= 0 && a_mat_cols != b_mat_rows {
+			return false, nil
+		}
+
+		// For now, require exact batch dimension match
+		// TODO: Implement full broadcasting for batch dimensions
+		if a_batch_dims != b_batch_dims {
+			return false, nil
+		}
+
+		// Check each batch dimension
+		for i := 0; i < int(a_batch_dims); i += 1 {
+			if a_tensor.shape[i] >= 0 && b_tensor.shape[i] >= 0 {
+				if a_tensor.shape[i] != b_tensor.shape[i] && a_tensor.shape[i] != 1 && b_tensor.shape[i] != 1 {
+					return false, nil
+				}
+			}
+		}
+
+		// Result shape: broadcast batch dims + (a_mat_rows, b_mat_cols)
+		result_shape = make([]i64, a_tensor.rank)
+		for i := 0; i < int(a_batch_dims); i += 1 {
+			a_dim := a_tensor.shape[i]
+			b_dim := b_tensor.shape[i]
+			if a_dim >= 0 && b_dim >= 0 {
+				result_shape[i] = max(a_dim, b_dim)
+			} else {
+				result_shape[i] = -1
+			}
+		}
+		result_shape[a_tensor.rank - 2] = a_mat_rows
+		result_shape[a_tensor.rank - 1] = b_mat_cols
+
+		return true, result_shape
+	}
+
+	// No other combinations are valid
+	return false, nil
+}
+
+// Check if broadcasting is possible between two tensor shapes
+// Following NumPy broadcasting rules
+tensors_broadcast_compatible :: proc(a, b: ^Type) -> (compatible: bool, result_shape: []i64) {
+	if a == nil || b == nil do return false, nil
+	if a.kind != .Tensor || b.kind != .Tensor do return false, nil
+
+	a_tensor, a_ok := a.variant.(TypeTensor)
+	b_tensor, b_ok := b.variant.(TypeTensor)
+	if !a_ok || !b_ok do return false, nil
+
+	// Element types must match
+	if !types_match(a_tensor.dtype, b_tensor.dtype) do return false, nil
+
+	// Implement NumPy broadcasting rules:
+	// 1. If tensors have different ranks, prepend 1s to the smaller rank
+	// 2. Dimensions are compatible if they are equal or one is 1
+	// 3. Result has the max of each dimension
+
+	max_rank := max(a_tensor.rank, b_tensor.rank)
+	result_shape = make([]i64, max_rank)
+
+	for i := 0; i < int(max_rank); i += 1 {
+		// Index from the right (broadcasting aligns from the right)
+		a_idx := int(a_tensor.rank) - int(max_rank) + i
+		b_idx := int(b_tensor.rank) - int(max_rank) + i
+
+		a_dim: i64 = 1
+		b_dim: i64 = 1
+
+		if a_idx >= 0 {
+			a_dim = a_tensor.shape[a_idx]
+		}
+		if b_idx >= 0 {
+			b_dim = b_tensor.shape[b_idx]
+		}
+
+		// Check compatibility
+		if a_dim >= 0 && b_dim >= 0 {
+			// Both are static
+			if a_dim != b_dim && a_dim != 1 && b_dim != 1 {
+				return false, nil
+			}
+			result_shape[i] = max(a_dim, b_dim)
+		} else {
+			// At least one is dynamic
+			result_shape[i] = -1
+		}
+	}
+
+	return true, result_shape
+}
+
 // Get the base type (dereference named types)
 base_type :: proc(t: ^Type) -> ^Type {
 	if t == nil do return nil
@@ -651,7 +911,14 @@ type_to_string :: proc(t: ^Type) -> string {
 		}
 	case .Proc:
 		return "proc"
+	case .Generic:
+		if generic, ok := t.variant.(TypeGeneric); ok {
+			if generic.specialized != nil {
+				return fmt.tprintf("$%s=%s", generic.name, type_to_string(generic.specialized))
+			}
+			return fmt.tprintf("$%s", generic.name)
+		}
 	}
-	
+
 	return fmt.tprintf("%v", t.kind)
 }

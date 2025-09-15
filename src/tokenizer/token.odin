@@ -57,6 +57,8 @@ Token_Kind :: enum u32 {
 		Quo,      // /
 		Mod,      // %
 		Mod_Mod,  // %%
+		Dot_Mul,  // .*
+		Dot_Quo,  // ./
 		And,      // &
 		Or,       // |
 		Xor,      // ~
@@ -193,6 +195,8 @@ tokens := [Token_Kind.COUNT]string {
 	"/",
 	"%",
 	"%%",
+	".*",
+	"./",
 	"&",
 	"|",
 	"~",

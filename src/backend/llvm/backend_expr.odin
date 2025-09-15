@@ -696,43 +696,125 @@ gen_matrix_multiply :: proc(gen: ^IRGenerator, lhs_expr: ^ast.Expr, rhs_expr: ^a
 		return nil
 	}
 	
-	// Get matrix dimensions from type
-	tensor_type := lhs_type.variant.(checker.TypeTensor)
-	if len(tensor_type.shape) < 2 {
+	// Get matrix dimensions from types
+	// For A * B where A is [M,K] and B is [K,N], result is [M,N]
+	lhs_tensor := lhs_type.variant.(checker.TypeTensor)
+	rhs_tensor := rhs_type.variant.(checker.TypeTensor)
+
+	if len(lhs_tensor.shape) < 2 || len(rhs_tensor.shape) < 2 {
 		fmt.printf("Matrix type missing dimensions\n")
 		return nil
 	}
-	
-	rows := cast(u32)tensor_type.shape[0]
-	cols := cast(u32)tensor_type.shape[1]
-	
-	// Create result matrix (same dimensions as input for square matrices)
+
+	m := cast(u32)lhs_tensor.shape[0]  // Rows of A
+	k := cast(u32)lhs_tensor.shape[1]  // Cols of A / Rows of B
+	n := cast(u32)rhs_tensor.shape[1]  // Cols of B
+
+	// Create result matrix with dimensions [M, N] using flexible descriptor
 	double_type := llvm.LLVMDoubleTypeInContext(gen.ctx)
-	array_type := llvm.LLVMArrayType(double_type, rows * cols)
 	i64_type := llvm.LLVMInt64TypeInContext(gen.ctx)
-	
-	member_types := [4]llvm.LLVMTypeRef{array_type, i64_type, i64_type, i64_type}
-	mat_struct_type := llvm.LLVMStructTypeInContext(gen.ctx, 
-		raw_data(member_types[:]), 4, 0)
-	
-	result := llvm.LLVMBuildAlloca(gen.builder, mat_struct_type, strings.clone_to_cstring("result_matrix", context.temp_allocator))
-	
-	// Initialize result matrix descriptor
-	rows_ptr := llvm.LLVMBuildStructGEP2(gen.builder, mat_struct_type, result, 1, strings.clone_to_cstring("result_rows", context.temp_allocator))
-	llvm.LLVMBuildStore(gen.builder, llvm.LLVMConstInt(i64_type, cast(u64)rows, 0), rows_ptr)
-	
-	cols_ptr := llvm.LLVMBuildStructGEP2(gen.builder, mat_struct_type, result, 2, strings.clone_to_cstring("result_cols", context.temp_allocator))
-	llvm.LLVMBuildStore(gen.builder, llvm.LLVMConstInt(i64_type, cast(u64)cols, 0), cols_ptr)
-	
-	ld_ptr := llvm.LLVMBuildStructGEP2(gen.builder, mat_struct_type, result, 3, strings.clone_to_cstring("result_ld", context.temp_allocator))
-	llvm.LLVMBuildStore(gen.builder, llvm.LLVMConstInt(i64_type, cast(u64)cols, 0), ld_ptr)
-	
+
+	// Allocate the result data array
+	result_array_type := llvm.LLVMArrayType(double_type, m * n)
+	result_data := llvm.LLVMBuildAlloca(gen.builder, result_array_type,
+		strings.clone_to_cstring("result_data", context.temp_allocator))
+
+	// Create flexible descriptor for result
+	descriptor_type := get_tensor_descriptor_type(gen)
+	result := llvm.LLVMBuildAlloca(gen.builder, descriptor_type,
+		strings.clone_to_cstring("result_descriptor", context.temp_allocator))
+
+	// Build data slice {ptr, len}
+	data_slice_type := get_slice_type(gen, double_type)
+	data_slice_ptr := llvm.LLVMBuildStructGEP2(gen.builder, descriptor_type, result, 0,
+		strings.clone_to_cstring("data_slice", context.temp_allocator))
+
+	double_ptr_type := llvm.LLVMPointerType(double_type, 0)
+	data_data_ptr := llvm.LLVMBuildStructGEP2(gen.builder, data_slice_type, data_slice_ptr, 0,
+		strings.clone_to_cstring("data_data", context.temp_allocator))
+	data_cast := llvm.LLVMBuildPointerCast(gen.builder, result_data, double_ptr_type,
+		strings.clone_to_cstring("data_cast", context.temp_allocator))
+	llvm.LLVMBuildStore(gen.builder, data_cast, data_data_ptr)
+
+	data_len_ptr := llvm.LLVMBuildStructGEP2(gen.builder, data_slice_type, data_slice_ptr, 1,
+		strings.clone_to_cstring("data_len", context.temp_allocator))
+	llvm.LLVMBuildStore(gen.builder, llvm.LLVMConstInt(i64_type, cast(u64)(m * n), 0), data_len_ptr)
+
+	// Create and set shape array [m, n]
+	shape_array_type := llvm.LLVMArrayType(i64_type, 2)
+	shape_array := llvm.LLVMBuildAlloca(gen.builder, shape_array_type,
+		strings.clone_to_cstring("shape_array", context.temp_allocator))
+
+	// shape[0] = m
+	idx0 := [2]llvm.LLVMValueRef{
+		llvm.LLVMConstInt(llvm.LLVMInt32TypeInContext(gen.ctx), 0, 0),
+		llvm.LLVMConstInt(llvm.LLVMInt32TypeInContext(gen.ctx), 0, 0),
+	}
+	shape0_ptr := llvm.LLVMBuildGEP2(gen.builder, shape_array_type, shape_array,
+		raw_data(idx0[:]), 2, strings.clone_to_cstring("shape0", context.temp_allocator))
+	llvm.LLVMBuildStore(gen.builder, llvm.LLVMConstInt(i64_type, cast(u64)m, 0), shape0_ptr)
+
+	// shape[1] = n
+	idx1 := [2]llvm.LLVMValueRef{
+		llvm.LLVMConstInt(llvm.LLVMInt32TypeInContext(gen.ctx), 0, 0),
+		llvm.LLVMConstInt(llvm.LLVMInt32TypeInContext(gen.ctx), 1, 0),
+	}
+	shape1_ptr := llvm.LLVMBuildGEP2(gen.builder, shape_array_type, shape_array,
+		raw_data(idx1[:]), 2, strings.clone_to_cstring("shape1", context.temp_allocator))
+	llvm.LLVMBuildStore(gen.builder, llvm.LLVMConstInt(i64_type, cast(u64)n, 0), shape1_ptr)
+
+	// Build shape slice {ptr, len}
+	shape_slice_type := get_slice_type(gen, i64_type)
+	shape_slice_ptr := llvm.LLVMBuildStructGEP2(gen.builder, descriptor_type, result, 1,
+		strings.clone_to_cstring("shape_slice", context.temp_allocator))
+
+	i64_ptr_type := llvm.LLVMPointerType(i64_type, 0)
+	shape_data_ptr := llvm.LLVMBuildStructGEP2(gen.builder, shape_slice_type, shape_slice_ptr, 0,
+		strings.clone_to_cstring("shape_data", context.temp_allocator))
+	shape_cast := llvm.LLVMBuildPointerCast(gen.builder, shape_array, i64_ptr_type,
+		strings.clone_to_cstring("shape_cast", context.temp_allocator))
+	llvm.LLVMBuildStore(gen.builder, shape_cast, shape_data_ptr)
+
+	shape_len_ptr := llvm.LLVMBuildStructGEP2(gen.builder, shape_slice_type, shape_slice_ptr, 1,
+		strings.clone_to_cstring("shape_len", context.temp_allocator))
+	llvm.LLVMBuildStore(gen.builder, llvm.LLVMConstInt(i64_type, 2, 0), shape_len_ptr)
+
+	// Create and set strides array [n, 1] for row-major
+	strides_array := llvm.LLVMBuildAlloca(gen.builder, shape_array_type,
+		strings.clone_to_cstring("strides_array", context.temp_allocator))
+
+	// strides[0] = n (stride for rows)
+	stride0_ptr := llvm.LLVMBuildGEP2(gen.builder, shape_array_type, strides_array,
+		raw_data(idx0[:]), 2, strings.clone_to_cstring("stride0", context.temp_allocator))
+	llvm.LLVMBuildStore(gen.builder, llvm.LLVMConstInt(i64_type, cast(u64)n, 0), stride0_ptr)
+
+	// strides[1] = 1 (stride for columns)
+	stride1_ptr := llvm.LLVMBuildGEP2(gen.builder, shape_array_type, strides_array,
+		raw_data(idx1[:]), 2, strings.clone_to_cstring("stride1", context.temp_allocator))
+	llvm.LLVMBuildStore(gen.builder, llvm.LLVMConstInt(i64_type, 1, 0), stride1_ptr)
+
+	// Build strides slice {ptr, len}
+	strides_slice_type := get_slice_type(gen, i64_type)
+	strides_slice_ptr := llvm.LLVMBuildStructGEP2(gen.builder, descriptor_type, result, 2,
+		strings.clone_to_cstring("strides_slice", context.temp_allocator))
+
+	strides_data_ptr := llvm.LLVMBuildStructGEP2(gen.builder, strides_slice_type, strides_slice_ptr, 0,
+		strings.clone_to_cstring("strides_data", context.temp_allocator))
+	strides_cast := llvm.LLVMBuildPointerCast(gen.builder, strides_array, i64_ptr_type,
+		strings.clone_to_cstring("strides_cast", context.temp_allocator))
+	llvm.LLVMBuildStore(gen.builder, strides_cast, strides_data_ptr)
+
+	strides_len_ptr := llvm.LLVMBuildStructGEP2(gen.builder, strides_slice_type, strides_slice_ptr, 1,
+		strings.clone_to_cstring("strides_len", context.temp_allocator))
+	llvm.LLVMBuildStore(gen.builder, llvm.LLVMConstInt(i64_type, 2, 0), strides_len_ptr)
+
 	// Call BLAS dgemm with the actual matrices
-	gen_blas_dgemm_call(gen, lhs_value, rhs_value, result, rows, cols, cols)
-	
+	// dgemm computes: C = alpha*A*B + beta*C where A is MxK, B is KxN, C is MxN
+	gen_blas_dgemm_call(gen, lhs_value, rhs_value, result, m, n, k)
+
 	// The result matrix now contains the multiplication result
-	// Load and return the complete matrix value
-	return llvm.LLVMBuildLoad2(gen.builder, mat_struct_type, result,
+	// Load and return just the data array
+	return llvm.LLVMBuildLoad2(gen.builder, result_array_type, result_data,
 		strings.clone_to_cstring("mult_result", context.temp_allocator))
 }
 
@@ -761,9 +843,9 @@ gen_blas_dgemm_call :: proc(gen: ^IRGenerator, a_matrix: llvm.LLVMValueRef, b_ma
 	llvm.LLVMBuildStore(gen.builder, llvm.LLVMConstInt(i32_type, cast(u64)m, 0), m_ptr)
 	llvm.LLVMBuildStore(gen.builder, llvm.LLVMConstInt(i32_type, cast(u64)n, 0), n_ptr)
 	llvm.LLVMBuildStore(gen.builder, llvm.LLVMConstInt(i32_type, cast(u64)k, 0), k_ptr)
-	llvm.LLVMBuildStore(gen.builder, llvm.LLVMConstInt(i32_type, cast(u64)m, 0), lda)
-	llvm.LLVMBuildStore(gen.builder, llvm.LLVMConstInt(i32_type, cast(u64)n, 0), ldb)
-	llvm.LLVMBuildStore(gen.builder, llvm.LLVMConstInt(i32_type, cast(u64)m, 0), ldc)
+	llvm.LLVMBuildStore(gen.builder, llvm.LLVMConstInt(i32_type, cast(u64)m, 0), lda)  // Leading dim of A (rows of A)
+	llvm.LLVMBuildStore(gen.builder, llvm.LLVMConstInt(i32_type, cast(u64)k, 0), ldb)  // Leading dim of B (rows of B)
+	llvm.LLVMBuildStore(gen.builder, llvm.LLVMConstInt(i32_type, cast(u64)m, 0), ldc)  // Leading dim of C (rows of C)
 	
 	// Alpha and beta
 	double_type := llvm.LLVMDoubleTypeInContext(gen.ctx)
@@ -772,23 +854,35 @@ gen_blas_dgemm_call :: proc(gen: ^IRGenerator, a_matrix: llvm.LLVMValueRef, b_ma
 	llvm.LLVMBuildStore(gen.builder, llvm.LLVMConstReal(double_type, 1.0), alpha)
 	llvm.LLVMBuildStore(gen.builder, llvm.LLVMConstReal(double_type, 0.0), beta)
 	
-	// Get pointers to matrix data (first field of struct)
-	array_type := llvm.LLVMArrayType(double_type, m * n)
-	i64_type_local := llvm.LLVMInt64TypeInContext(gen.ctx)
+	// Extract data pointers from the new slice-based tensor descriptors
+	// Structure is: { data_slice: {ptr, len}, shape_slice: {ptr, len}, strides_slice: {ptr, len} }
+	descriptor_type := get_tensor_descriptor_type(gen)
+	data_slice_type := get_slice_type(gen, double_type)
+
+	// Get the data slice from each tensor (field 0)
+	a_data_slice := llvm.LLVMBuildStructGEP2(gen.builder, descriptor_type, a_matrix, 0,
+		strings.clone_to_cstring("a_data_slice", context.temp_allocator))
+	b_data_slice := llvm.LLVMBuildStructGEP2(gen.builder, descriptor_type, b_matrix, 0,
+		strings.clone_to_cstring("b_data_slice", context.temp_allocator))
+	c_data_slice := llvm.LLVMBuildStructGEP2(gen.builder, descriptor_type, c_matrix, 0,
+		strings.clone_to_cstring("c_data_slice", context.temp_allocator))
+
+	// Extract the data pointer from each slice (field 0 of the slice struct)
+	a_data_ptr := llvm.LLVMBuildStructGEP2(gen.builder, data_slice_type, a_data_slice, 0,
+		strings.clone_to_cstring("a_data_ptr", context.temp_allocator))
+	b_data_ptr := llvm.LLVMBuildStructGEP2(gen.builder, data_slice_type, b_data_slice, 0,
+		strings.clone_to_cstring("b_data_ptr", context.temp_allocator))
+	c_data_ptr := llvm.LLVMBuildStructGEP2(gen.builder, data_slice_type, c_data_slice, 0,
+		strings.clone_to_cstring("c_data_ptr", context.temp_allocator))
 	
-	member_types := [4]llvm.LLVMTypeRef{array_type, i64_type_local, i64_type_local, i64_type_local}
-	mat_struct_type := llvm.LLVMStructTypeInContext(gen.ctx, 
-		raw_data(member_types[:]), 4, 0)
-	
-	a_data_ptr := llvm.LLVMBuildStructGEP2(gen.builder, mat_struct_type, a_matrix, 0, strings.clone_to_cstring("a_data", context.temp_allocator))
-	b_data_ptr := llvm.LLVMBuildStructGEP2(gen.builder, mat_struct_type, b_matrix, 0, strings.clone_to_cstring("b_data", context.temp_allocator))
-	c_data_ptr := llvm.LLVMBuildStructGEP2(gen.builder, mat_struct_type, c_matrix, 0, strings.clone_to_cstring("c_data", context.temp_allocator))
-	
-	// Cast to double pointers
+	// Load the actual pointers from the pointer fields
 	double_ptr_type := llvm.LLVMPointerType(double_type, 0)
-	a_ptr := llvm.LLVMBuildPointerCast(gen.builder, a_data_ptr, double_ptr_type, strings.clone_to_cstring("A_ptr", context.temp_allocator))
-	b_ptr := llvm.LLVMBuildPointerCast(gen.builder, b_data_ptr, double_ptr_type, strings.clone_to_cstring("B_ptr", context.temp_allocator))
-	c_ptr := llvm.LLVMBuildPointerCast(gen.builder, c_data_ptr, double_ptr_type, strings.clone_to_cstring("C_ptr", context.temp_allocator))
+	a_ptr := llvm.LLVMBuildLoad2(gen.builder, double_ptr_type, a_data_ptr,
+		strings.clone_to_cstring("A_ptr", context.temp_allocator))
+	b_ptr := llvm.LLVMBuildLoad2(gen.builder, double_ptr_type, b_data_ptr,
+		strings.clone_to_cstring("B_ptr", context.temp_allocator))
+	c_ptr := llvm.LLVMBuildLoad2(gen.builder, double_ptr_type, c_data_ptr,
+		strings.clone_to_cstring("C_ptr", context.temp_allocator))
 	
 	// Build argument list
 	args := make([dynamic]llvm.LLVMValueRef, context.temp_allocator)

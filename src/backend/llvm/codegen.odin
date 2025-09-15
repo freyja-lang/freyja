@@ -87,7 +87,13 @@ generate_code_with_config :: proc(
 		
 	case .Static_Library:
 		// Build static library with selected linking strategy
-		lib_path := strings.concatenate([]string{config.output_path, ".a"})
+		lib_ext := ""
+		when ODIN_OS == .Windows {
+			lib_ext = ".lib"
+		} else {
+			lib_ext = ".a"
+		}
+		lib_path := strings.concatenate([]string{config.output_path, lib_ext})
 		build_config := Build_Output{
 			library_type = config.library_type,
 			output_path = lib_path,

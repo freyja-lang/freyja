@@ -1,0 +1,9 @@
+// Test file for extension
+package test
+
+main :: proc() {
+    x := 10
+    if x > 5 {
+        print("Hello Freyja")
+    }
+}

@@ -1,0 +1,16 @@
+package main
+
+// Test file for Freyja language features
+main :: proc() {
+    // Variable declarations
+    x := 10
+    // Control flow
+    if x > 5 {
+        // print("x is greater than 5")
+    }
+
+    // Loop
+    for i := 0; i < 10; i += 1 {
+        // print(i)
+    }
+}

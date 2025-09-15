@@ -1,0 +1,101 @@
+{
+    "name": "freyja-language",
+    "displayName": "Freyja Language",
+    "description": "Language support for Freyja programming language",
+    "version": "0.0.1",
+    "publisher": "freyja-lang",
+    "engines": {
+        "vscode": "^1.75.0"
+    },
+    "categories": [
+        "Programming Languages"
+    ],
+    "main": "./out/extension.js",
+    "activationEvents": [
+        "onLanguage:freyja",
+        "workspaceContains:**/*.freyja",
+        "workspaceContains:**/*.fj",
+        "onCommand:freyja.restart"
+    ],
+    "contributes": {
+        "languages": [
+            {
+                "id": "freyja",
+                "aliases": [
+                    "Freyja",
+                    "freyja"
+                ],
+                "extensions": [
+                    ".freyja",
+                    ".fj"
+                ],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "grammars": [
+            {
+                "language": "freyja",
+                "scopeName": "source.freyja",
+                "path": "./syntaxes/freyja.tmLanguage.json"
+            }
+        ],
+        "configuration": {
+            "type": "object",
+            "title": "Freyja Language Server",
+            "properties": {
+                "freyja.server.path": {
+                    "type": [
+                        "null",
+                        "string"
+                    ],
+                    "default": null,
+                    "description": "Path to freyja-lsp executable. If not set, will look for freyja-lsp in PATH."
+                },
+                "freyja.trace.server": {
+                    "scope": "window",
+                    "type": "string",
+                    "enum": [
+                        "off",
+                        "messages",
+                        "verbose"
+                    ],
+                    "default": "off",
+                    "description": "Traces the communication between VS Code and the Freyja language server."
+                }
+            }
+        },
+        "commands": [
+            {
+                "command": "freyja.restart",
+                "title": "Restart Freyja Language Server",
+                "category": "Freyja"
+            },
+            {
+                "command": "freyja.stop",
+                "title": "Stop Freyja Language Server",
+                "category": "Freyja"
+            }
+        ],
+        "iconThemes": [
+            {
+                "id": "freyja-icon-theme",
+                "label": "Freyja Icon Theme",
+                "path": "./icons/freyja-icon-theme.json"
+            }
+        ]
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./"
+    },
+    "dependencies": {
+        "vscode-languageclient": "^8.1.0"
+    },
+    "devDependencies": {
+        "@types/node": "^18.0.0",
+        "@types/vscode": "^1.74.0",
+        "@vscode/test-electron": "^2.3.0",
+        "typescript": "^5.0.0"
+    }
+}

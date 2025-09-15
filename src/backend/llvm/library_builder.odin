@@ -210,9 +210,38 @@ build_conservative_fat_library :: proc(obj_path: string, blas_lib: string, outpu
 // Build thin library - just Freyja code
 build_thin_library :: proc(obj_path: string, output_path: string) -> bool {
     fmt.println("Building thin library (requires external BLAS)...")
-    
-    ar_cmd := fmt.aprintf("ar rcs %s %s", output_path, obj_path)
-    result := exec_cmd(ar_cmd)
+
+    result := 0
+    when ODIN_OS == .Windows {
+        // Try multiple archiver options on Windows
+        // First try llvm-lib (comes with LLVM)
+        ar_cmd := fmt.aprintf("llvm-lib /OUT:%s %s 2>NUL", output_path, obj_path)
+        result = exec_cmd(ar_cmd)
+
+        if result != 0 {
+            // If llvm-lib fails, try lib.exe (Visual Studio)
+            ar_cmd = fmt.aprintf("lib /OUT:%s %s 2>NUL", output_path, obj_path)
+            result = exec_cmd(ar_cmd)
+
+            if result != 0 {
+                // If both fail, try ar (MinGW/MSYS2/Git Bash)
+                ar_cmd = fmt.aprintf("ar rcs %s %s", output_path, obj_path)
+                result = exec_cmd(ar_cmd)
+
+                if result != 0 {
+                    fmt.eprintln("Failed to create library. Please install one of:")
+                    fmt.eprintln("  - LLVM (for llvm-lib)")
+                    fmt.eprintln("  - Visual Studio Build Tools (for lib.exe)")
+                    fmt.eprintln("  - MinGW/MSYS2 (for ar)")
+                    return false
+                }
+            }
+        }
+    } else {
+        // Use ar on Unix-like systems
+        ar_cmd := fmt.aprintf("ar rcs %s %s", output_path, obj_path)
+        result = exec_cmd(ar_cmd)
+    }
     
     if result != 0 {
         fmt.eprintln("Failed to create thin library:", result)

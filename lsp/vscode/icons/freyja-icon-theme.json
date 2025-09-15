@@ -1,0 +1,24 @@
+{
+  "iconDefinitions": {
+    "_freyja": {
+      "iconPath": "./freyja-file-icon.png"
+    }
+  },
+  "fileExtensions": {
+    "freyja": "_freyja",
+    "fj": "_freyja"
+  },
+  "fileNames": {},
+  "folderNames": {},
+  "folderNamesExpanded": {},
+  "languageIds": {
+    "freyja": "_freyja"
+  },
+  "light": {
+    "fileExtensions": {
+      "freyja": "_freyja",
+      "fj": "_freyja"
+    }
+  },
+  "highContrast": {}
+}

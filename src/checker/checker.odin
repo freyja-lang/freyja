@@ -185,7 +185,7 @@ checker_info_init :: proc() -> ^CheckerInfo {
 	// Legacy BLAS functions (will be replaced by tensor operations)
 	add_builtin_function(info, "dgemm")        // Matrix-matrix multiply (for compatibility)
 	add_builtin_function(info, "dgemv")        // Matrix-vector multiply (for compatibility)
-	fmt.printf("Added legacy BLAS functions: dgemm, dgemv\n")
+	// fmt.printf("Added legacy BLAS functions: dgemm, dgemv\n")
 	
 	// Tensor operation builtins (industry standard)
 	add_builtin_function(info, "tensor")       // Create tensor from data
@@ -205,12 +205,12 @@ checker_info_init :: proc() -> ^CheckerInfo {
 	add_builtin_function(info, "unsqueeze")    // Add singleton dimensions
 	add_builtin_function(info, "stack")        // Stack tensors along new dimension
 	add_builtin_function(info, "cat")          // Concatenate tensors along dimension
-	fmt.printf("Added tensor builtin functions: tensor, zeros, ones, full, arange, eye, reshape, transpose, matmul, dot, sum, mean, broadcast, squeeze, unsqueeze, stack, cat\n")
+	// fmt.printf("Added tensor builtin functions: tensor, zeros, ones, full, arange, eye, reshape, transpose, matmul, dot, sum, mean, broadcast, squeeze, unsqueeze, stack, cat\n")
 	
 	// Debug: List all entities in universe scope
-	fmt.printf("Universe scope entities:\n")
+	// fmt.printf("Universe scope entities:\n")
 	for name, entity in info.universe_scope.entities {
-		fmt.printf("  - %s (kind: %v)\n", name, entity.kind)
+		// fmt.printf("  - %s (kind: %v)\n", name, entity.kind)
 	}
 
 	// Initialize other data structures
@@ -242,15 +242,15 @@ lookup_entity :: proc(info: ^CheckerInfo, name: string) -> ^Entity {
 	scope := info.current_scope
 	depth := 0
 	for scope != nil {
-		fmt.printf("      Checking scope %d (kind: %v) for '%s'\n", depth, scope.kind, name)
+		// fmt.printf("      Checking scope %d (kind: %v) for '%s'\n", depth, scope.kind, name)
 		if entity, exists := scope.entities[name]; exists {
-			fmt.printf("      Found '%s' in scope %v\n", name, scope.kind)
+			// fmt.printf("      Found '%s' in scope %v\n", name, scope.kind)
 			return entity
 		}
 		scope = scope.parent
 		depth += 1
 	}
-	fmt.printf("      '%s' not found after checking %d scopes\n", name, depth)
+	// fmt.printf("      '%s' not found after checking %d scopes\n", name, depth)
 	return nil
 }
 
@@ -274,13 +274,13 @@ add_entity :: proc(info: ^CheckerInfo, entity: ^Entity) -> bool {
 check_procedure_later :: proc(info: ^CheckerInfo, proc_entity: ^Entity) {
 	assert(proc_entity.kind == .PROCEDURE, "Only procedures can be queued for deferred checking")
 	append(&info.procedure_queue, proc_entity)
-	fmt.printf("  Queued procedure '%s' for body checking\n", proc_entity.name)
+	// fmt.printf("  Queued procedure '%s' for body checking\n", proc_entity.name)
 }
 
 // Phase 2: Check all queued procedure bodies (following Odin's pattern)
 check_procedure_bodies :: proc(info: ^CheckerInfo) -> bool {
-	fmt.printf("\n--- Phase 2: Checking procedure bodies ---\n")
-	fmt.printf("Processing %d queued procedures...\n", len(info.procedure_queue))
+	// fmt.printf("\n--- Phase 2: Checking procedure bodies ---\n")
+	// fmt.printf("Processing %d queued procedures...\n", len(info.procedure_queue))
 
 	for proc_entity in info.procedure_queue {
 		if !check_procedure_body(info, proc_entity) {
@@ -288,20 +288,20 @@ check_procedure_bodies :: proc(info: ^CheckerInfo) -> bool {
 		}
 	}
 
-	fmt.printf("Phase 2 complete\n")
+	// fmt.printf("Phase 2 complete\n")
 	return true
 }
 
 // Check a single procedure body
 check_procedure_body :: proc(info: ^CheckerInfo, proc_entity: ^Entity) -> bool {
-	fmt.printf("  Checking body of procedure '%s'\n", proc_entity.name)
+	// fmt.printf("  Checking body of procedure '%s'\n", proc_entity.name)
 
 	// Get the procedure AST from the entity's declaration
 	value_decl: ^ast.Value_Decl
 	if vd, ok := proc_entity.decl.derived_stmt.(^ast.Value_Decl); ok {
 		value_decl = vd
 	} else {
-		error(tokenizer.Pos{}, "Procedure entity declaration is not a Value_Decl")
+		error(proc_entity.decl.pos, "Procedure entity declaration is not a Value_Decl")
 		return false
 	}
 
@@ -316,7 +316,7 @@ check_procedure_body :: proc(info: ^CheckerInfo, proc_entity: ^Entity) -> bool {
 	}
 
 	if proc_lit == nil {
-		error(tokenizer.Pos{}, "Could not find procedure literal for '%s'", proc_entity.name)
+		error(proc_entity.decl.pos, "Could not find procedure literal for '%s'", proc_entity.name)
 		return false
 	}
 
@@ -350,7 +350,7 @@ check_procedure_body :: proc(info: ^CheckerInfo, proc_entity: ^Entity) -> bool {
 					// Add to scope
 					add_entity(info, param_entity)
 					
-					fmt.printf("    Added parameter: %s : %v\n", param_name_str, param_type.kind)
+					// fmt.printf("    Added parameter: %s : %v\n", param_name_str, param_type.kind)
 				}
 			}
 		}
@@ -367,20 +367,25 @@ check_procedure_body :: proc(info: ^CheckerInfo, proc_entity: ^Entity) -> bool {
 		}
 	}
 
-	fmt.printf("    Procedure '%s' body checked successfully\n", proc_entity.name)
+	// fmt.printf("    Procedure '%s' body checked successfully\n", proc_entity.name)
 	return true
 }
 
 // Step 2: Type check the AST (following Odin's two-phase pattern)
 check :: proc(parse_result: parser.ParseResult) -> CheckResult {
-	fmt.printf("\n=== TYPE CHECK ===\n")
-	fmt.printf("Type checking AST...\n")
+	// fmt.printf("\n=== TYPE CHECK ===\n")
+	// fmt.printf("Type checking AST...\n")
 
 	// Initialize error collector
 	init_error_collector()
 
 	if !parse_result.success {
-		error(tokenizer.Pos{}, "Cannot type check: parsing failed")
+		// Use the file's first position if available
+		pos := tokenizer.Pos{}
+		if parse_result.file != nil && len(parse_result.file.decls) > 0 {
+			pos = parse_result.file.decls[0].pos
+		}
+		error(pos, "Cannot type check: parsing failed")
 		return CheckResult {
 			success = false,
 			error_count = global_error_collector.error_count,
@@ -395,32 +400,32 @@ check :: proc(parse_result: parser.ParseResult) -> CheckResult {
 	info.package_scope = push_scope(info, .PACKAGE)
 
 	// Phase 1: Check declarations (collect all procedure signatures)
-	fmt.printf("--- Phase 1: Checking declarations ---\n")
+	// fmt.printf("--- Phase 1: Checking declarations ---\n")
 	if parse_result.file != nil {
 		success := check_file(info, parse_result.file)
 		if !success {
-			fmt.eprintln("Phase 1: Declaration checking failed")
+			// fmt.eprintln("Phase 1: Declaration checking failed")
 			return CheckResult{success = false}
 		}
 	}
 
-	fmt.printf(
-		"Phase 1 complete - found %d entities, %d procedures queued\n",
-		len(info.entities),
-		len(info.procedure_queue),
-	)
+	// fmt.printf(
+	// 	"Phase 1 complete - found %d entities, %d procedures queued\n",
+	// 	len(info.entities),
+	// 	len(info.procedure_queue),
+	// )
 
 	// Phase 2: Check procedure bodies (following Odin's pattern)
 	if !check_procedure_bodies(info) {
-		fmt.eprintln("Phase 2: Procedure body checking failed")
+		// fmt.eprintln("Phase 2: Procedure body checking failed")
 		return CheckResult{success = false}
 	}
 
-	fmt.printf("Type checking complete - found %d entities\n", len(info.entities))
+	// fmt.printf("Type checking complete - found %d entities\n", len(info.entities))
 
 	// Print discovered entities
 	for entity in info.entities {
-		fmt.printf("  Entity: %s (%v) in %v scope\n", entity.name, entity.kind, entity.scope.kind)
+		// fmt.printf("  Entity: %s (%v) in %v scope\n", entity.name, entity.kind, entity.scope.kind)
 	}
 
 	// Print any errors/warnings
@@ -440,7 +445,7 @@ check :: proc(parse_result: parser.ParseResult) -> CheckResult {
 
 // Check a file (find and process all declarations)
 check_file :: proc(info: ^CheckerInfo, file: ^ast.File) -> bool {
-	fmt.printf("Checking file: %s\n", file.fullpath)
+	// fmt.printf("Checking file: %s\n", file.fullpath)
 	
 	// Set current file for error reporting
 	info.current_file = file.fullpath
@@ -464,7 +469,7 @@ check_declaration :: proc(info: ^CheckerInfo, decl_stmt: ^ast.Stmt) -> bool {
 		// Package declarations don't create entities in our simple model
 		return true
 	case:
-		fmt.printf("  Unhandled declaration type: %T\n", decl)
+		// fmt.printf("  Unhandled declaration type: %T\n", decl)
 		return true
 	}
 }
@@ -472,7 +477,12 @@ check_declaration :: proc(info: ^CheckerInfo, decl_stmt: ^ast.Stmt) -> bool {
 // Check value declarations (variables, constants, procedures)
 check_value_declaration :: proc(info: ^CheckerInfo, decl: ^ast.Value_Decl) -> bool {
 	if len(decl.names) != len(decl.values) {
-		error(tokenizer.Pos{}, "Name/value count mismatch in declaration")
+		// Use position from first name if available, otherwise empty pos
+		pos := tokenizer.Pos{}
+		if len(decl.names) > 0 {
+			pos = decl.names[0].pos
+		}
+		error(pos, "Name/value count mismatch in declaration")
 		return false
 	}
 
@@ -486,7 +496,7 @@ check_value_declaration :: proc(info: ^CheckerInfo, decl: ^ast.Value_Decl) -> bo
 		if ident, ok := name_expr.derived.(^ast.Ident); ok {
 			name = ident.name
 		} else {
-			error(tokenizer.Pos{}, "Declaration name is not identifier")
+			error(name_expr.pos, "Declaration name is not identifier")
 			return false
 		}
 
@@ -555,7 +565,7 @@ check_value_declaration :: proc(info: ^CheckerInfo, decl: ^ast.Value_Decl) -> bo
 				result_count = result_count,
 			}
 			entity.type = proc_type
-			fmt.printf("  Found procedure: %s\n", name)
+			// fmt.printf("  Found procedure: %s\n", name)
 
 			// Add to current scope first
 			if !add_entity(info, entity) {
@@ -570,10 +580,10 @@ check_value_declaration :: proc(info: ^CheckerInfo, decl: ^ast.Value_Decl) -> bo
 			entity.kind = .VARIABLE
 			entity.type = check_expression(info, value_expr)
 			if entity.type == nil {
-				error(tokenizer.Pos{}, "Could not determine type for '%s'", name)
+				error(value_expr.pos, "Could not determine type for '%s'", name)
 				return false
 			}
-			fmt.printf("  Found variable: %s : %v\n", name, entity.type.kind)
+			// fmt.printf("  Found variable: %s : %v\n", name, entity.type.kind)
 		}
 
 		entity.state = .RESOLVED
@@ -616,13 +626,13 @@ check_statement :: proc(info: ^CheckerInfo, stmt: ^ast.Stmt) -> bool {
 		for result_expr in s.results {
 			result_type := check_expression(info, result_expr)
 			if result_type == nil {
-				fmt.eprintf("ERROR: Could not determine type for return expression\n")
+				// fmt.eprintf("ERROR: Could not determine type for return expression\n")
 				return false
 			}
 		}
 		return true
 	case:
-		fmt.printf("    Unhandled statement type: %T\n", s)
+		// fmt.printf("    Unhandled statement type: %T\n", s)
 		return true // Don't fail on unhandled statements for now
 	}
 }
@@ -656,7 +666,7 @@ check_local_declaration :: proc(info: ^CheckerInfo, decl: ^ast.Value_Decl) -> bo
 	}
 
 	if len(decl.names) != len(decl.values) {
-		fmt.eprintln("ERROR: Name/value count mismatch in local declaration")
+		// fmt.eprintln("ERROR: Name/value count mismatch in local declaration")
 		return false
 	}
 
@@ -672,7 +682,7 @@ check_local_declaration :: proc(info: ^CheckerInfo, decl: ^ast.Value_Decl) -> bo
 			name = id.name
 			ident = id
 		} else {
-			fmt.eprintln("ERROR: Local declaration name is not identifier")
+			// fmt.eprintln("ERROR: Local declaration name is not identifier")
 			return false
 		}
 
@@ -713,7 +723,7 @@ check_local_declaration :: proc(info: ^CheckerInfo, decl: ^ast.Value_Decl) -> bo
 		}
 		
 		if entity.type == nil {
-			fmt.eprintf("ERROR: Could not determine type for local variable '%s'\n", name)
+			// fmt.eprintf("ERROR: Could not determine type for local variable '%s'\n", name)
 			return false
 		}
 
@@ -728,7 +738,7 @@ check_local_declaration :: proc(info: ^CheckerInfo, decl: ^ast.Value_Decl) -> bo
 		} else {
 			type_name = fmt.tprintf("%v", entity.type.kind)
 		}
-		fmt.printf("      Local variable: %s : %s\n", name, type_name)
+		// fmt.printf("      Local variable: %s : %s\n", name, type_name)
 
 		// Add to current scope (local variables go to procedure/block scope)
 		entity.scope.entities[entity.name] = entity
@@ -739,11 +749,11 @@ check_local_declaration :: proc(info: ^CheckerInfo, decl: ^ast.Value_Decl) -> bo
 
 // Check assignment statements
 check_assignment_statement :: proc(info: ^CheckerInfo, assign: ^ast.Assign_Stmt) -> bool {
-	fmt.printf("    Checking assignment statement\n")
+	// fmt.printf("    Checking assignment statement\n")
 
 	// Check that we have equal numbers of LHS and RHS expressions
 	if len(assign.lhs) != len(assign.rhs) {
-		fmt.eprintln("ERROR: Assignment count mismatch")
+		// fmt.eprintln("ERROR: Assignment count mismatch")
 		return false
 	}
 
@@ -756,9 +766,19 @@ check_assignment_statement :: proc(info: ^CheckerInfo, assign: ^ast.Assign_Stmt)
 			return false
 		}
 
-		// Type compatibility check (simplified)
-		if lhs_type != rhs_type {
-			fmt.eprintln("ERROR: Type mismatch in assignment")
+		// Type compatibility check
+		// For tensors, check shape compatibility
+		if is_type_tensor(lhs_type) && is_type_tensor(rhs_type) {
+			if !tensors_same_shape(lhs_type, rhs_type) {
+				lhs_str := type_to_string(lhs_type)
+				rhs_str := type_to_string(rhs_type)
+				// fmt.eprintf("ERROR: Cannot assign %s to %s - shapes don't match\n", rhs_str, lhs_str)
+				return false
+			}
+			// fmt.printf("    Tensor assignment: shapes compatible\n")
+		} else if lhs_type != rhs_type {
+			// For non-tensors, require exact type match
+			// fmt.eprintln("ERROR: Type mismatch in assignment")
 			return false
 		}
 	}
@@ -781,7 +801,7 @@ check_expression :: proc(info: ^CheckerInfo, expr: ^ast.Expr) -> ^Type {
 		case .Rune:
 			return t_untyped_rune
 		case:
-			fmt.printf("    Unhandled literal type: %v\n", e.tok.kind)
+			// fmt.printf("    Unhandled literal type: %v\n", e.tok.kind)
 			return nil
 		}
 	case ^ast.Ident:
@@ -789,7 +809,7 @@ check_expression :: proc(info: ^CheckerInfo, expr: ^ast.Expr) -> ^Type {
 		if entity := lookup_entity(info, e.name); entity != nil {
 			return entity.type
 		} else {
-			fmt.eprintf("ERROR: Undefined identifier '%s'\n", e.name)
+			// fmt.eprintf("ERROR: Undefined identifier '%s'\n", e.name)
 			return nil
 		}
 	case ^ast.Binary_Expr:
@@ -804,72 +824,205 @@ check_expression :: proc(info: ^CheckerInfo, expr: ^ast.Expr) -> ^Type {
 		// Check type compatibility for the operation
 		#partial switch e.op.kind {
 		case .Add, .Sub:
-			// Addition and subtraction require same types
+			// Addition and subtraction
+			// For tensors, check dimension compatibility
+			if is_type_tensor(lhs_type) && is_type_tensor(rhs_type) {
+				if !tensors_same_shape(lhs_type, rhs_type) {
+					lhs_str := type_to_string(lhs_type)
+					rhs_str := type_to_string(rhs_type)
+					// fmt.eprintf("ERROR: Incompatible tensor shapes for %s: %s and %s\n",
+					// 	e.op.kind == .Add ? "addition" : "subtraction",
+					// 	lhs_str, rhs_str)
+					error_msg := fmt.tprintf("Incompatible tensor shapes for %s: %s and %s",
+						e.op.kind == .Add ? "addition" : "subtraction",
+						lhs_str, rhs_str)
+					error_with_pos_range(expr.pos, expr.end, error_msg)
+					return nil
+				}
+				// fmt.printf("  Tensor %s: shapes compatible\n",
+				// 	e.op.kind == .Add ? "addition" : "subtraction")
+				return lhs_type // Result has same shape as inputs
+			}
+
+			// For scalars, require same types
 			if lhs_type != rhs_type {
-				fmt.eprintln("ERROR: Type mismatch in arithmetic expression")
+				// fmt.eprintln("ERROR: Type mismatch in arithmetic expression")
 				return nil
 			}
 			return lhs_type // Arithmetic preserves type
 			
 		case .Mul:
-			// Multiplication can be:
-			// 1. Same types (scalar * scalar, matrix * matrix)
-			// 2. Matrix * scalar or scalar * matrix
+			// * operator is matrix multiplication for tensors (MATLAB style)
+			// Use .* for element-wise multiplication
+
+			// Tensor-tensor matrix multiplication
+			if is_type_tensor(lhs_type) && is_type_tensor(rhs_type) {
+				// Check matrix multiplication compatibility
+				compatible, result_shape := tensors_matmul_compatible(lhs_type, rhs_type)
+				if compatible {
+					// fmt.printf("  Tensor matrix multiplication\n")
+					// Create result tensor type
+					if lhs_tensor, ok := lhs_type.variant.(TypeTensor); ok {
+						return make_type_tensor(lhs_tensor.dtype, result_shape, lhs_tensor.memory_order)
+					}
+				}
+
+				lhs_str := type_to_string(lhs_type)
+				rhs_str := type_to_string(rhs_type)
+				error_msg := fmt.tprintf("Incompatible tensor shapes for matrix multiplication: %s * %s",
+					lhs_str, rhs_str)
+				// fmt.eprintf("ERROR: %s\n", error_msg)
+				error_with_pos_range(expr.pos, expr.end, error_msg)
+				return nil
+			}
+
+			// Tensor-scalar multiplication
+			if is_type_tensor(lhs_type) && is_scalar_type(rhs_type) {
+				// fmt.printf("  Tensor-scalar multiplication\n")
+				return lhs_type // Result has tensor shape
+			}
+			if is_scalar_type(lhs_type) && is_type_tensor(rhs_type) {
+				// fmt.printf("  Scalar-tensor multiplication\n")
+				return rhs_type // Result has tensor shape
+			}
+
+			// Scalar-scalar multiplication
 			if lhs_type == rhs_type {
-				// Same types - straightforward
 				return lhs_type
 			}
-			
-			// Check for matrix-scalar multiplication
-			if lhs_type.kind == .Tensor && is_scalar_type(rhs_type) {
-				fmt.printf("  Matrix-scalar multiplication: matrix * scalar\n")
-				return lhs_type // Result is matrix type
-			}
-			if is_scalar_type(lhs_type) && rhs_type.kind == .Tensor {
-				fmt.printf("  Scalar-matrix multiplication: scalar * matrix\n")
-				return rhs_type // Result is matrix type
-			}
-			
-			// Matrix-matrix multiplication
-			if lhs_type.kind == .Tensor && rhs_type.kind == .Tensor {
-				fmt.printf("  Matrix-matrix multiplication\n")
-				// TODO: Check dimension compatibility (lhs cols == rhs rows)
-				// For now, assume compatible and return left type
-				return lhs_type
-			}
-			
-			fmt.eprintln("ERROR: Invalid types for multiplication")
+
+			// fmt.eprintln("ERROR: Invalid types for multiplication")
 			return nil
+
+		case .Dot_Mul:
+			// .* operator is element-wise multiplication
+
+			// Tensor element-wise multiplication
+			if is_type_tensor(lhs_type) && is_type_tensor(rhs_type) {
+				if tensors_same_shape(lhs_type, rhs_type) {
+					// fmt.printf("  Tensor element-wise multiplication: shapes match\n")
+					return lhs_type
+				}
+
+				// Check broadcasting compatibility
+				compatible, result_shape := tensors_broadcast_compatible(lhs_type, rhs_type)
+				if compatible {
+					// fmt.printf("  Tensor element-wise multiplication with broadcasting\n")
+					if lhs_tensor, ok := lhs_type.variant.(TypeTensor); ok {
+						return make_type_tensor(lhs_tensor.dtype, result_shape, lhs_tensor.memory_order)
+					}
+				}
+
+				lhs_str := type_to_string(lhs_type)
+				rhs_str := type_to_string(rhs_type)
+				error_msg := fmt.tprintf("Incompatible tensor shapes for element-wise multiplication: %s .* %s",
+					lhs_str, rhs_str)
+				// fmt.eprintf("ERROR: %s\n", error_msg)
+				error_with_pos_range(expr.pos, expr.end, error_msg)
+				return nil
+			}
+
+			// For scalars, same as regular multiplication
+			if lhs_type == rhs_type {
+				return lhs_type
+			}
+
+			// fmt.eprintln("ERROR: Invalid types for element-wise multiplication")
+			return nil
+
+		case .Dot_Quo, .Quo, .Mod:
+			// ./ is element-wise division for tensors
+			// / is element-wise for scalars, but we could make it an error for tensors
+			// % is modulo (element-wise)
+
+			is_dot_op := e.op.kind == .Dot_Quo
+			op_name := ""
+			#partial switch e.op.kind {
+			case .Dot_Quo: op_name = "element-wise division"
+			case .Quo: op_name = "division"
+			case .Mod: op_name = "modulo"
+			}
+
+			// Tensor / Tensor (element-wise)
+			if is_type_tensor(lhs_type) && is_type_tensor(rhs_type) {
+				if tensors_same_shape(lhs_type, rhs_type) {
+					// fmt.printf("  Tensor element-wise %s: shapes match\n", op_name)
+					return lhs_type
+				}
+
+				// Check broadcasting compatibility
+				compatible, result_shape := tensors_broadcast_compatible(lhs_type, rhs_type)
+				if compatible {
+					// fmt.printf("  Tensor element-wise %s with broadcasting\n", op_name)
+					if lhs_tensor, ok := lhs_type.variant.(TypeTensor); ok {
+						return make_type_tensor(lhs_tensor.dtype, result_shape, lhs_tensor.memory_order)
+					}
+				}
+
+				lhs_str := type_to_string(lhs_type)
+				rhs_str := type_to_string(rhs_type)
+				error_msg := fmt.tprintf("Incompatible tensor shapes for %s: %s and %s",
+					op_name, lhs_str, rhs_str)
+				// fmt.eprintf("ERROR: %s\n", error_msg)
+				error_with_pos_range(expr.pos, expr.end, error_msg)
+				return nil
+			}
+
+			// Tensor / Scalar
+			if is_type_tensor(lhs_type) && is_scalar_type(rhs_type) {
+				// fmt.printf("  Tensor-scalar %s\n", op_name)
+				return lhs_type // Result has tensor shape
+			}
+
+			// Scalar / Tensor (only for division, creates tensor)
+			if is_scalar_type(lhs_type) && is_type_tensor(rhs_type) {
+				if e.op.kind == .Quo {
+					// fmt.printf("  Scalar-tensor division (broadcasts scalar)\n")
+					return rhs_type // Result has tensor shape
+				} else {
+					// fmt.eprintln("ERROR: Modulo not supported for scalar % tensor")
+					return nil
+				}
+			}
+
+			// Scalar / Scalar
+			if lhs_type == rhs_type {
+				return lhs_type
+			}
+
+			// fmt.eprintf("ERROR: Invalid types for %s\n", op_name)
+			return nil
+
 		case:
-			fmt.printf("ERROR: Unhandled binary operator: %v\n", e.op.kind)
+			// fmt.printf("ERROR: Unhandled binary operator: %v\n", e.op.kind)
 			return nil
 		}
 	case ^ast.Call_Expr:
 		// Function call expression
 		// Get the function being called
-		fmt.printf("    Checking function call\n")
+		// fmt.printf("    Checking function call\n")
 		if e.expr == nil {
-			fmt.eprintln("    ERROR: Call expression has nil expr")
+			// fmt.eprintln("    ERROR: Call expression has nil expr")
 			return nil
 		}
 		ident, ident_ok := e.expr.derived_expr.(^ast.Ident)
 		if ident_ok {
 			// Look up the function
-			fmt.printf("    Looking up function: %s\n", ident.name)
+			// fmt.printf("    Looking up function: %s\n", ident.name)
 			entity := lookup_entity(info, ident.name)
 			if entity == nil {
-				fmt.eprintf("    ERROR: Undefined function '%s'\n", ident.name)
-				error_with_pos(tokenizer.Pos{}, "Undefined function '%s'", ident.name)
+				// fmt.eprintf("    ERROR: Undefined function '%s'\n", ident.name)
+				error_with_pos_range(expr.pos, expr.end, "Undefined function '%s'", ident.name)
 				return nil
 			}
-			fmt.printf("    Found entity: %s, kind: %v\n", entity.name, entity.kind)
+			// fmt.printf("    Found entity: %s, kind: %v\n", entity.name, entity.kind)
 			
 			if entity.kind == .BUILTIN {
 				// Handle builtin functions
 				if entity.name == "mul" {
 					// mul(A, B, &C) - check we have 3 arguments
 					if len(e.args) != 3 {
-						error_with_pos(tokenizer.Pos{}, "mul expects exactly 3 arguments, got %d", len(e.args))
+						error_with_pos_range(expr.pos, expr.end, "mul expects exactly 3 arguments, got %d", len(e.args))
 						return nil
 					}
 					// Check argument types
@@ -877,6 +1030,124 @@ check_expression :: proc(info: ^CheckerInfo, expr: ^ast.Expr) -> ^Type {
 						check_expression(info, arg)
 					}
 					// Return void type for now
+					return info.builtin_void
+				} else if entity.name == "zeros" || entity.name == "ones" || entity.name == "empty" {
+					// zeros(rows, cols) or zeros(shape...) - create tensor
+					if len(e.args) < 1 {
+						error_with_pos_range(expr.pos, expr.end, "%s expects at least 1 dimension", entity.name)
+						return nil
+					}
+
+					// For now, handle 2D case (most common)
+					if len(e.args) == 2 {
+						// Get dimensions from arguments
+						dim1_expr := e.args[0]
+						dim2_expr := e.args[1]
+
+						// For simplicity, assume literal dimensions for now
+						dim1 := i64(3)  // Default
+						dim2 := i64(4)  // Default
+
+						if lit, ok := dim1_expr.derived_expr.(^ast.Basic_Lit); ok {
+							if lit.tok.kind == .Integer {
+								dim1, _ = strconv.parse_i64(lit.tok.text)
+							}
+						}
+						if lit, ok := dim2_expr.derived_expr.(^ast.Basic_Lit); ok {
+							if lit.tok.kind == .Integer {
+								dim2, _ = strconv.parse_i64(lit.tok.text)
+							}
+						}
+
+						// Return tensor type with these dimensions
+						shape := []i64{dim1, dim2}
+						return make_type_tensor(t_f64, shape, .ColumnMajor)
+					}
+
+					// For other cases, return a generic tensor
+					return make_type_tensor(t_f64, []i64{-1, -1}, .ColumnMajor)
+				} else if entity.name == "transpose" {
+					// transpose(A) - transpose a tensor
+					if len(e.args) != 1 {
+						error_with_pos_range(expr.pos, expr.end, "transpose expects exactly 1 argument, got %d", len(e.args))
+						return nil
+					}
+
+					// Check argument type
+					arg_type := check_expression(info, e.args[0])
+					if !is_type_tensor(arg_type) {
+						error_with_pos_range(expr.pos, expr.end, "transpose requires a tensor argument")
+						return nil
+					}
+
+					// Get tensor details
+					if tensor, ok := arg_type.variant.(TypeTensor); ok {
+						// For 2D tensors, swap dimensions
+						if tensor.rank == 2 {
+							transposed_shape := []i64{tensor.shape[1], tensor.shape[0]}
+							return make_type_tensor(tensor.dtype, transposed_shape, tensor.memory_order)
+						}
+						// For 1D tensors, no change (or could convert to column vector)
+						if tensor.rank == 1 {
+							return arg_type
+						}
+						// For higher rank, default to reversing last two dimensions
+						if tensor.rank > 2 {
+							transposed_shape := make([]i64, tensor.rank)
+							for i := 0; i < int(tensor.rank); i += 1 {
+								if i == int(tensor.rank - 2) {
+									transposed_shape[i] = tensor.shape[tensor.rank - 1]
+								} else if i == int(tensor.rank - 1) {
+									transposed_shape[i] = tensor.shape[tensor.rank - 2]
+								} else {
+									transposed_shape[i] = tensor.shape[i]
+								}
+							}
+							return make_type_tensor(tensor.dtype, transposed_shape, tensor.memory_order)
+						}
+					}
+					return arg_type
+				} else if entity.name == "matmul" {
+					// matmul(A, B) - matrix multiplication
+					if len(e.args) != 2 {
+						error_with_pos_range(expr.pos, expr.end, "matmul expects exactly 2 arguments, got %d", len(e.args))
+						return nil
+					}
+
+					// Check argument types
+					arg1_type := check_expression(info, e.args[0])
+					arg2_type := check_expression(info, e.args[1])
+
+					if !is_type_tensor(arg1_type) || !is_type_tensor(arg2_type) {
+						error_with_pos_range(expr.pos, expr.end, "matmul requires tensor arguments")
+						return nil
+					}
+
+					// Check dimension compatibility
+					compatible, result_shape := tensors_matmul_compatible(arg1_type, arg2_type)
+					if !compatible {
+						arg1_str := type_to_string(arg1_type)
+						arg2_str := type_to_string(arg2_type)
+						// fmt.eprintf("ERROR: Incompatible tensor shapes for matmul: %s @ %s\n", arg1_str, arg2_str)
+						error_msg := fmt.tprintf("Incompatible tensor shapes for matmul: %s @ %s", arg1_str, arg2_str)
+						error_with_pos_range(expr.pos, expr.end, error_msg)
+						return nil
+					}
+
+					// Create and return result type
+					if tensor1, ok := arg1_type.variant.(TypeTensor); ok {
+						return make_type_tensor(tensor1.dtype, result_shape, tensor1.memory_order)
+					}
+					return arg1_type
+				} else {
+					// Generic builtin handling - just check arguments exist
+					for arg in e.args {
+						check_expression(info, arg)
+					}
+					// Most builtins return their first argument's type
+					if len(e.args) > 0 {
+						return check_expression(info, e.args[0])
+					}
 					return info.builtin_void
 				}
 			} else if entity.kind == .PROCEDURE {
@@ -889,8 +1160,8 @@ check_expression :: proc(info: ^CheckerInfo, expr: ^ast.Expr) -> ^Type {
 								params_tuple, params_ok := proc_type.params.variant.(TypeTuple)
 								if params_ok {
 									if len(e.args) != len(params_tuple.types) {
-										fmt.eprintf("ERROR: Function '%s' expects %d arguments but got %d\n", 
-											ident.name, len(params_tuple.types), len(e.args))
+										// fmt.eprintf("ERROR: Function '%s' expects %d arguments but got %d\n",
+										// 	ident.name, len(params_tuple.types), len(e.args))
 										return nil
 									}
 									
@@ -926,11 +1197,11 @@ check_expression :: proc(info: ^CheckerInfo, expr: ^ast.Expr) -> ^Type {
 					// Default to int if no type info
 					return info.builtin_int
 			} else {
-				fmt.eprintf("ERROR: '%s' is not a procedure or builtin\n", ident.name)
+				// fmt.eprintf("ERROR: '%s' is not a procedure or builtin\n", ident.name)
 				return nil
 			}
 		} else {
-			fmt.eprintln("ERROR: Complex function expressions not yet supported")
+			// fmt.eprintln("ERROR: Complex function expressions not yet supported")
 			return nil
 		}
 	
@@ -953,18 +1224,18 @@ check_expression :: proc(info: ^CheckerInfo, expr: ^ast.Expr) -> ^Type {
 		
 		// Handle matrix composite literals
 		if target_type.kind == .Tensor {
-			fmt.printf("  Processing matrix composite literal\n")
+			// fmt.printf("  Processing matrix composite literal\n")
 			
 			// For matrix literals with explicit data like:
 			// matrix[3,3]f64{{1,2,3}, {4,5,6}, {7,8,9}}
 			if len(e.elems) > 0 {
-				fmt.printf("  Matrix literal has %d row initializers\n", len(e.elems))
+				// fmt.printf("  Matrix literal has %d row initializers\n", len(e.elems))
 				// TODO: Process the nested array initializers
 				// For now, just validate structure
 				return target_type
 			} else {
 				// Empty {} means zero initialization
-				fmt.printf("  Matrix zero initialization\n")
+				// fmt.printf("  Matrix zero initialization\n")
 				return target_type
 			}
 		}
@@ -974,7 +1245,7 @@ check_expression :: proc(info: ^CheckerInfo, expr: ^ast.Expr) -> ^Type {
 		return target_type
 	
 	case:
-		fmt.printf("  Unhandled expression type: %T\n", e)
+		// fmt.printf("  Unhandled expression type: %T\n", e)
 		return nil
 	}
 
@@ -988,13 +1259,52 @@ resolve_type_spec :: proc(info: ^CheckerInfo, type_expr: ^ast.Expr) -> ^Type {
 	}
 	
 	
+	// Handle polymorphic/generic types (e.g., $T, $M, $N)
+	if poly_type, ok := type_expr.derived_expr.(^ast.Poly_Type); ok {
+		if poly_type.type != nil {
+			// Create a generic type
+			generic_name := poly_type.type.name
+
+			// Check if we already have this generic type in the current scope
+			if entity := lookup_entity(info, generic_name); entity != nil {
+				if entity.kind == .TYPE_NAME && entity.type != nil && entity.type.kind == .Generic {
+					return entity.type
+				}
+			}
+
+			// Create new generic type
+			// Generate a unique ID for this generic
+			generic_id := i64(len(info.entities))
+			generic_type := make_type_generic(info.current_scope, generic_id, generic_name, nil)
+
+			// Add entity for this generic type to the current scope
+			entity := new(Entity)
+			entity.name = generic_name
+			entity.kind = .TYPE_NAME
+			entity.type = generic_type
+			entity.state = .RESOLVED
+
+			// Store the entity reference in the generic type
+			if g, ok := generic_type.variant.(TypeGeneric); ok {
+				g.entity = entity
+			}
+
+			// Add to current scope
+			if info.current_scope != nil {
+				add_entity(info, entity)
+			}
+
+			return generic_type
+		}
+	}
+
 	// Handle identifier types (e.g., "i32", "int", etc.)
 	if ident, ok := type_expr.derived_expr.(^ast.Ident); ok {
 		// Try to get builtin type first
 		if builtin := get_builtin_type(ident.name); builtin != nil {
 			return builtin
 		}
-		
+
 		// Handle legacy aliases
 		switch ident.name {
 		case "float":
@@ -1008,7 +1318,7 @@ resolve_type_spec :: proc(info: ^CheckerInfo, type_expr: ^ast.Expr) -> ^Type {
 					return entity.type
 				}
 			}
-			fmt.eprintf("Unknown type: %s\n", ident.name)
+			// fmt.eprintf("Unknown type: %s\n", ident.name)
 			return info.builtin_int // Default to int
 		}
 	}
@@ -1046,26 +1356,62 @@ resolve_type_spec :: proc(info: ^CheckerInfo, type_expr: ^ast.Expr) -> ^Type {
 		return make_type_tensor(elem_type, shape[:], .ColumnMajor)
 	}
 	
+	// Handle pointer types (e.g., ^tensor[3,4]f32)
+	if ptr_type, ok := type_expr.derived_expr.(^ast.Pointer_Type); ok {
+		// Get the element type
+		elem_type := resolve_type_spec(info, ptr_type.elem)
+		// Create pointer type
+		return make_type_pointer(elem_type)
+	}
+
 	// Handle tensor types
 	if tensor_type, ok := type_expr.derived_expr.(^ast.Tensor_Type); ok {
+		// Debug: Check what's in the shape
+		for i := 0; i < len(tensor_type.shape); i += 1 {
+			dim_expr := tensor_type.shape[i]
+			// fmt.printf("DEBUG: Tensor dimension %d type: %T\n", i, dim_expr.derived_expr)
+			if poly, ok := dim_expr.derived_expr.(^ast.Poly_Type); ok {
+				if poly.type != nil {
+					// fmt.printf("  Poly type name: %s\n", poly.type.name)
+				}
+			}
+		}
+
 		// Get element type
 		elem_type := resolve_type_spec(info, tensor_type.elem)
+		// fmt.printf("DEBUG: Tensor element type expr: %T\n", tensor_type.elem.derived_expr)
+		if poly, ok := tensor_type.elem.derived_expr.(^ast.Poly_Type); ok {
+			if poly.type != nil {
+				// fmt.printf("  Element poly type name: %s\n", poly.type.name)
+			}
+		}
 		
 		// Get dimensions from shape
 		shape := make([dynamic]i64, context.temp_allocator)
-		
-		for dim_expr in tensor_type.shape {
-			if ident, ok := dim_expr.derived_expr.(^ast.Ident); ok && ident.name == "_" {
+
+		for dim_expr, idx in tensor_type.shape {
+			if poly, ok := dim_expr.derived_expr.(^ast.Poly_Type); ok {
+				// Generic dimension (e.g., $M, $N)
+				// For now, treat as dynamic dimension (-1)
+				// Later, we'll track these generics for specialization
+				if poly.type != nil {
+					// fmt.printf("  Dimension %d: Generic $%s\n", idx, poly.type.name)
+				}
+				append(&shape, -1)
+			} else if ident, ok := dim_expr.derived_expr.(^ast.Ident); ok && ident.name == "_" {
 				// Runtime-determined dimension
+				// fmt.printf("  Dimension %d: Runtime (_)\n", idx)
 				append(&shape, -1)
 			} else if lit, ok := dim_expr.derived_expr.(^ast.Basic_Lit); ok {
 				// Compile-time known dimension
 				if lit.tok.kind == .Integer {
 					size, _ := strconv.parse_i64(lit.tok.text)
+					// fmt.printf("  Dimension %d: Literal %d\n", idx, size)
 					append(&shape, size)
 				}
 			} else {
 				// For now, treat as dynamic dimension
+				// fmt.printf("  Dimension %d: Unknown (treating as dynamic)\n", idx)
 				append(&shape, -1)
 			}
 		}

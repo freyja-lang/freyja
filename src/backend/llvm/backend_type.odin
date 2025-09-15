@@ -73,7 +73,7 @@ type_to_llvm :: proc(gen: ^IRGenerator, type: ^checker.Type) -> llvm.LLVMTypeRef
 			
 			// Check if dtype is nil
 			if tensor.dtype == nil {
-				fmt.printf("ERROR: Tensor has nil dtype\n")
+				// fmt.printf("ERROR: Tensor has nil dtype\n")
 				return llvm.LLVMVoidTypeInContext(gen.ctx)
 			}
 			
@@ -88,7 +88,7 @@ type_to_llvm :: proc(gen: ^IRGenerator, type: ^checker.Type) -> llvm.LLVMTypeRef
 			if checker.tensor_can_calculate_size(&tensor) {
 				total_bytes := checker.tensor_calculate_size(&tensor)
 				if tensor.dtype.cached_size <= 0 {
-					fmt.printf("ERROR: Tensor dtype has invalid cached_size: %d\n", tensor.dtype.cached_size)
+					// fmt.printf("ERROR: Tensor dtype has invalid cached_size: %d\n", tensor.dtype.cached_size)
 					// Default to pointer type for safety
 					return llvm.LLVMPointerType(elem_type, 0)
 				}
@@ -102,6 +102,12 @@ type_to_llvm :: proc(gen: ^IRGenerator, type: ^checker.Type) -> llvm.LLVMTypeRef
 		}
 		return llvm.LLVMVoidTypeInContext(gen.ctx)
 		
+	case .Generic:
+		// For generic types, we need specialization first
+		// For now, use a placeholder pointer type
+		// In a complete implementation, this would error or trigger specialization
+		return llvm.LLVMPointerType(llvm.LLVMInt8TypeInContext(gen.ctx), 0)
+
 	case .Proc:
 		// For procedure types, generate function type
 		proc_type: checker.TypeProc
